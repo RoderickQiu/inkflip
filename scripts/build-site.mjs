@@ -1,7 +1,10 @@
 // Prepares site/ for deployment: copies the packaged extension into site/download/ and
 // renders the social preview image (site/og.png, 1200×630) from the real before/after pair.
 //
-//   npm run package && node scripts/build-site.mjs        then: cd site && vercel deploy --prod
+//   npm run package && node scripts/build-site.mjs
+//
+// Deploys happen on push: the Vercel project has Root Directory `site` and builds the zip
+// itself. For a manual deploy run `vercel deploy --prod` from the repo root, never from site/.
 import { chromium } from 'playwright';
 import { readFile, copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
