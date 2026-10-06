@@ -158,6 +158,7 @@ repaints. Once a canvas has a verdict, two samples in a row must agree before it
 | `npm run test:real` | Classifier in Chromium on 19 labelled images | 19 / 19 |
 | `npm run eval` | 393 hand-labelled images from 48 real pages | 389 / 393, 0 photos flipped |
 | `npm run test:e2e -- --live` | The real extension, headless: cross-origin and SVG images, canvases painted early, late, tainted and by WebGL, picture cards on dark sites, theme switches, peek, per-site off, right-click choices on images, canvases and video (through transparent layers too), cache, Dark Reader alongside, live LeetCode, and a frame-by-frame check that no image or canvas shows white first | 91 / 91 |
+| `npm run test:menu` | Chrome's real right-click menu, in headed Chromium on a virtual screen (Docker): one Inkflip entry on images, canvases and videos, through transparent layers too, none on plain text, and choices clicked with a real mouse | 11 / 11 |
 
 ## Limitations
 
@@ -198,6 +199,7 @@ npm test                         # unit tests, no browser needed
 npm run test:real                # downloads the labelled images, runs the classifier in Chromium
 npm run fetch:darkreader         # Dark Reader's MV3 build, for the e2e test
 npm run test:e2e -- --live       # loads the extension headless; --live adds LeetCode
+npm run test:menu                # Chrome's real right-click menu, in Docker on a virtual screen
 npm run package                  # dist/inkflip-<version>.zip
 
 npm run field                    # field test on research/field-pages.tsv, headless, dark OS scheme

@@ -929,11 +929,11 @@
 
   // -------------------------------------------------------- right-click menu
   //
-  // Chrome itself offers Inkflip's menu when you right-click an image or a video. A canvas,
-  // or an image or video under a transparent layer (pdf.js's text layer, YouTube's controls),
-  // gets no menu of its own, so this script tells the service worker what is under the
-  // pointer and it shows a second menu while there is one. When a choice is made, the service
-  // worker asks this frame what was right-clicked.
+  // Chrome has no menu context for a canvas, nor for an image or video under a transparent
+  // layer (pdf.js's text layer, YouTube's controls). So Inkflip's menu matches every
+  // right-click and stays hidden: this script tells the service worker what is under the
+  // pointer, and it shows the menu, worded for an image or a video, while there is one. When
+  // a choice is made, the service worker asks this frame what was right-clicked.
 
   let menuTarget = null; // the image, canvas or video under the last right-click
   let reported; // what this document last told the service worker; undefined: tell it again
@@ -944,7 +944,7 @@
     const stack = document.elementsFromPoint(x, y);
     for (let i = 0; i < stack.length; i++) {
       const el = stack[i];
-      if (isMedia(el)) return { el, direct: i === 0 };
+      if (isMedia(el)) return { el };
       if (el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement ||
           el instanceof HTMLEmbedElement || el instanceof HTMLObjectElement) return { frame: true };
       const c = parseColor(getComputedStyle(el).backgroundColor);
@@ -962,8 +962,7 @@
   function reportAt(x, y) {
     const hit = mediaAt(x, y);
     if (hit.frame) return; // the frame's own copy of this script reports
-    // A directly hit image or video already has Chrome's own menu.
-    report(!hit.el || (hit.direct && !isCanvas(hit.el)) ? null : isVideo(hit.el) ? 'video' : 'image');
+    report(!hit.el ? null : isVideo(hit.el) ? 'video' : 'image');
   }
 
   function pointerMoved() {

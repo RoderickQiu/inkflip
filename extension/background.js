@@ -154,7 +154,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'remember' && msg.result) {
     cachePut(msg.url, msg.result).catch(() => {});
   }
-  if (msg.type === 'menu') showUnder(msg.kind || null, msg.t);
+  if (msg.type === 'menu') showMenu(msg.kind || null, msg.t);
 });
 
 // --------------------------------------------------------- right-click corrections
@@ -167,51 +167,51 @@ const CHOICES = [
   ['auto', () => 'Let Inkflip decide'],
 ];
 
-// Chrome knows by itself when an image or a video was right-clicked. A canvas matches no
-// context but "all", and neither does an image or a video under a transparent layer, so the
-// two "under" menus are hidden until the content script reports one under the pointer.
+// One menu for images, canvases and videos. A canvas matches no context but "all", and
+// neither does an image or a video under a transparent layer, so the menu has to be an "all"
+// one. It stays hidden until the content script reports one of them under the pointer.
+// It has to be the only top-level entry: when two of an extension's entries match a click,
+// Chrome nests them under the extension's full name, hidden ones included.
 // A canvas is called an image here, as in Chrome's own "Save image as".
-const MENUS = [
-  { id: 'image', noun: 'image', contexts: ['image'] },
-  { id: 'video', noun: 'video', contexts: ['video'] },
-  { id: 'under-image', noun: 'image', contexts: ['all'], hidden: true },
-  { id: 'under-video', noun: 'video', contexts: ['all'], hidden: true },
-];
+const MENU = 'inkflip';
 const PAGES = ['http://*/*', 'https://*/*', 'file:///*'];
 const ignore = () => void chrome.runtime.lastError;
 
 function createMenus() {
   chrome.contextMenus.removeAll(() => {
-    for (const m of MENUS) {
-      const base = { contexts: m.contexts, ...(m.hidden ? { documentUrlPatterns: PAGES } : {}) };
-      const parentId = 'inkflip:' + m.id;
-      chrome.contextMenus.create({ ...base, id: parentId, title: 'Inkflip', ...(m.hidden ? { visible: false } : {}) }, ignore);
-      for (const [choice, title] of CHOICES) {
-        const id = `${parentId}:${choice}`;
-        chrome.contextMenus.create(title
-          ? { ...base, id, parentId, title: title(m.noun) }
-          : { ...base, id, parentId, type: 'separator' }, ignore);
-      }
+    const base = { contexts: ['all'], documentUrlPatterns: PAGES };
+    chrome.contextMenus.create({ ...base, id: MENU, title: 'Inkflip', visible: false }, ignore);
+    for (const [choice, title] of CHOICES) {
+      const id = `${MENU}:${choice}`;
+      chrome.contextMenus.create(title
+        ? { ...base, id, parentId: MENU, title: title('image') }
+        : { ...base, id, parentId: MENU, type: 'separator' }, ignore);
     }
   });
-  underShown = null;
+  shown = null;
+  noun = 'image';
 }
 
-let underShown; // 'image' | 'video' | null; undefined after a restart, until the next report
-let underTime = 0;
+let shown; // 'image' | 'video' | null; undefined after a restart, until the next report
+let noun = 'image'; // what the entries currently say
+let shownAt = 0;
 
-/** Show the "under" menu for a kind of element, or neither. Late reports are dropped. */
-function showUnder(kind, t = Date.now()) {
-  if (t < underTime) return; // frames report out of order when the pointer crosses between them
-  underTime = t;
-  if (kind === underShown) return;
-  underShown = kind;
-  for (const m of MENUS) {
-    if (m.hidden) chrome.contextMenus.update('inkflip:' + m.id, { visible: kind === m.noun }, ignore);
+/** Show the menu for a kind of element, worded for it, or hide it. Late reports are dropped. */
+function showMenu(kind, t = Date.now()) {
+  if (t < shownAt) return; // frames report out of order when the pointer crosses between them
+  shownAt = t;
+  if (kind === shown) return;
+  shown = kind;
+  chrome.contextMenus.update(MENU, { visible: !!kind }, ignore);
+  if (kind && kind !== noun) {
+    noun = kind;
+    for (const [choice, title] of CHOICES) {
+      if (title && choice !== 'auto') chrome.contextMenus.update(`${MENU}:${choice}`, { title: title(kind) }, ignore);
+    }
   }
 }
 
-chrome.tabs.onActivated.addListener(() => showUnder(null));
+chrome.tabs.onActivated.addListener(() => showMenu(null));
 
 chrome.runtime.onInstalled.addListener(async () => {
   const { settings } = await chrome.storage.sync.get('settings');
@@ -220,23 +220,22 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 /**
- * Remember a choice for this site. Images are keyed by their URL, which Chrome hands over; for
- * anything else the frame that was right-clicked says which element it was and what key it
- * goes by.
+ * Remember a choice for this site. An image is keyed by its URL, which Chrome hands over for
+ * one it hit directly; for anything else the frame that was right-clicked says which element
+ * it was and what key it goes by.
  */
 async function onMenuClick(info, tab) {
-  const [, menu, choice] = String(info.menuItemId).split(':');
-  if (!menu || !choice || choice === 'sep') return;
+  const [menu, choice] = String(info.menuItemId).split(':');
+  if (menu !== MENU || !choice || choice === 'sep') return;
   let host = hostOf(tab && tab.url);
   if (host === null) host = hostOf(info.pageUrl);
   if (host === null) return;
-  let key = menu === 'image' ? info.srcUrl : null;
+  let key = info.mediaType === 'image' ? info.srcUrl : null;
   if (!key && tab && tab.id >= 0) {
     key = await chrome.tabs.sendMessage(tab.id, { type: 'menu-target' }, { frameId: info.frameId || 0 })
       .catch(() => null);
   }
-  // A page opened before Inkflip was installed has no content script to ask.
-  if (!key && menu === 'video' && /^https?:/.test(info.srcUrl || '')) key = info.srcUrl;
+  if (!key && info.mediaType === 'video' && /^https?:/.test(info.srcUrl || '')) key = info.srcUrl;
   if (!key) return;
   const store = 'ovr:' + host;
   const overrides = (await chrome.storage.local.get(store))[store] || {};
@@ -248,7 +247,7 @@ async function onMenuClick(info, tab) {
 chrome.contextMenus.onClicked.addListener((info, tab) => { onMenuClick(info, tab); });
 
 // For the end-to-end test, which can't open Chrome's native menu.
-self.inkflipTest = { menuClick: onMenuClick, underShown: () => underShown ?? null };
+self.inkflipTest = { menuClick: onMenuClick, menuShown: () => shown ?? null };
 
 // --------------------------------------------------------------- keyboard shortcut
 

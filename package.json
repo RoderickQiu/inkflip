@@ -9,6 +9,7 @@
     "test": "node --test test/classifier.test.mjs",
     "test:real": "node test/real-images.mjs",
     "test:e2e": "node test/e2e.mjs",
+    "test:menu": "node test/native-menu.mjs",
     "fetch:darkreader": "node scripts/fetch-darkreader.mjs",
     "icons": "node scripts/build-icons.mjs",
     "assets": "node scripts/build-assets.mjs",

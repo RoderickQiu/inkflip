@@ -391,8 +391,7 @@ console.log('\nCanvases and video on a dark fixture page');
   // that Chrome accepted every entry, moves and right-clicks the real mouse, then calls the
   // service worker's click handler directly.
   const missing = await sw.evaluate(async () => {
-    const ids = ['image', 'video', 'under-image', 'under-video']
-      .flatMap((m) => ['', ':flip', ':dim', ':none', ':sep', ':auto'].map((c) => `inkflip:${m}${c}`));
+    const ids = ['', ':flip', ':dim', ':none', ':sep', ':auto'].map((c) => `inkflip${c}`);
     const errors = [];
     for (const id of ids) {
       await new Promise((done) => chrome.contextMenus.update(id, {}, () => {
@@ -402,8 +401,8 @@ console.log('\nCanvases and video on a dark fixture page');
     }
     return errors;
   });
-  check('all four Inkflip menus exist, each with its five entries', !missing.length, missing.join('; '));
-  const under = () => sw.evaluate(() => self.inkflipTest.underShown());
+  check('the Inkflip menu exists with its five entries', !missing.length, missing.join('; '));
+  const under = () => sw.evaluate(() => self.inkflipTest.menuShown());
   const point = async (sel, fy = 0.5) => {
     const b = await page.locator(sel).boundingBox();
     return [b.x + b.width / 2, b.y + b.height * fy];
@@ -424,14 +423,16 @@ console.log('\nCanvases and video on a dark fixture page');
   check('menu: nothing extra over text', await untilUnder(null), String(await under()));
   await hover('#cv-chart');
   check('menu: a canvas gets the Inkflip menu', await untilUnder('image'), String(await under()));
+  await hover('#title');
+  await untilUnder(null);
   await hover('#img-plain');
-  check('menu: a plain image is left to Chrome\'s own image menu', await untilUnder(null), String(await under()));
+  check('menu: so does a plain image', await untilUnder('image'), String(await under()));
+  await hover('#vid', 0.85);
+  check('menu: a video gets it worded for video', await untilUnder('video'), String(await under()));
   await hover('#cv-overlay');
   check('menu: a canvas under a transparent layer gets it', await untilUnder('image'), String(await under()));
-  await hover('#vid', 0.85);
-  check('menu: a plain video is left to Chrome\'s own video menu', await untilUnder(null), String(await under()));
   await hover('#vid', 0.1);
-  check('menu: a video under a transparent layer gets the video menu', await untilUnder('video'), String(await under()));
+  check('menu: so does a video under a transparent layer', await untilUnder('video'), String(await under()));
 
   async function choose(sel, menuItemId, info = {}, fy) {
     const [x, y] = await point(sel, fy);
@@ -447,41 +448,41 @@ console.log('\nCanvases and video on a dark fixture page');
     return el.getAttribute('data-inkflip') === v && (getComputedStyle(el).filter !== 'none') === filtered;
   }, { id, v, filtered }, 4000);
 
-  await choose('#cv-overlay', 'inkflip:under-image:none');
+  await choose('#cv-overlay', 'inkflip:none');
   check('right-click › Show as is, on a covered canvas', await verdictIs('cv-covered', 'none', false), JSON.stringify(await shown('cv-covered')));
   check('…changes that canvas only', (await shown('cv-chart')).v === 'flip');
-  await choose('#cv-overlay', 'inkflip:under-image:auto');
+  await choose('#cv-overlay', 'inkflip:auto');
   check('right-click › Let Inkflip decide flips it again', await verdictIs('cv-covered', 'flip', true), JSON.stringify(await shown('cv-covered')));
 
-  await choose('#img-covered', 'inkflip:under-image:none');
+  await choose('#img-covered', 'inkflip:none');
   check('right-click › Show as is, on an image under a transparent layer', await verdictIs('img-covered', 'none', false), JSON.stringify(await shown('img-covered')));
   const stored = await ctl.evaluate(async () => (await chrome.storage.local.get('ovr:127.0.0.1'))['ovr:127.0.0.1'] || {});
   check('…remembered by the image\'s URL, like any image', stored[BASE + '/lc_tree.jpg'] === 'none', JSON.stringify(stored));
-  await choose('#img-covered', 'inkflip:under-image:auto');
+  await choose('#img-covered', 'inkflip:auto');
   check('…and undone', await verdictIs('img-covered', 'flip', true), JSON.stringify(await shown('img-covered')));
 
-  await choose('#cv-webgl', 'inkflip:under-image:flip');
+  await choose('#cv-webgl', 'inkflip:flip');
   check('right-click › Flip works on a WebGL canvas', await verdictIs('cv-webgl', 'flip', true), JSON.stringify(await shown('cv-webgl')));
-  await choose('#cv-webgl', 'inkflip:under-image:auto');
+  await choose('#cv-webgl', 'inkflip:auto');
   check('…and Let Inkflip decide leaves it alone again', await waitFor(page, () => {
     const el = document.getElementById('cv-webgl');
     return getComputedStyle(el).filter === 'none';
   }, null, 4000), JSON.stringify(await shown('cv-webgl')));
 
-  await choose('#vid', 'inkflip:video:flip', { mediaType: 'video', srcUrl: '' }, 0.85);
+  await choose('#vid', 'inkflip:flip', { mediaType: 'video', srcUrl: '' }, 0.85);
   check('right-click › Flip this video', await verdictIs('vid', 'flip', true), JSON.stringify(await shown('vid')));
-  await choose('#cv-chart', 'inkflip:under-image:none');
+  await choose('#cv-chart', 'inkflip:none');
   check('right-click › Show as is, on a canvas', await verdictIs('cv-chart', 'none', false), JSON.stringify(await shown('cv-chart')));
 
   await page.reload();
   check('reload: the video choice is remembered', await verdictIs('vid', 'flip', true), JSON.stringify(await shown('vid')));
   check('reload: the canvas choice is remembered', await verdictIs('cv-chart', 'none', false), JSON.stringify(await shown('cv-chart')));
-  await choose('#vid', 'inkflip:video:auto', { mediaType: 'video', srcUrl: '' }, 0.85);
+  await choose('#vid', 'inkflip:auto', { mediaType: 'video', srcUrl: '' }, 0.85);
   check('Let Inkflip decide leaves a video alone again', await waitFor(page, () => {
     const el = document.getElementById('vid');
     return !el.hasAttribute('data-inkflip') && getComputedStyle(el).filter === 'none';
   }, null, 4000), JSON.stringify(await shown('vid')));
-  await choose('#cv-chart', 'inkflip:under-image:auto');
+  await choose('#cv-chart', 'inkflip:auto');
   check('…and a canvas is judged again', await verdictIs('cv-chart', 'flip', true), JSON.stringify(await shown('cv-chart')));
 
   await page.goto(BASE + '/canvas/light');
