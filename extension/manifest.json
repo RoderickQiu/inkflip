@@ -4,6 +4,7 @@
   "short_name": "Inkflip",
   "version": "0.2.0",
   "description": "Turns white-background diagrams, charts and logos dark so they match dark mode. Built to run alongside Dark Reader.",
+  "homepage_url": "https://inkflip.r-q.name",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
