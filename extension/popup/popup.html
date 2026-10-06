@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Inkflip</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="top">
+    <img class="logo" src="../icons/icon.svg" alt="" width="34" height="34">
+    <div class="brand">
+      <h1>Inkflip</h1>
+      <p>Dark mode for images</p>
+    </div>
+    <label class="switch" title="Turn Inkflip on or off everywhere">
+      <input type="checkbox" id="enabled" aria-label="Inkflip on everywhere">
+      <span></span>
+    </label>
+  </header>
+
+  <section class="site card">
+    <div class="site-row">
+      <div class="site-text">
+        <div class="host" id="host">this page</div>
+        <div class="status" id="status"><i class="dot"></i><span>Checking this page…</span></div>
+      </div>
+      <label class="switch small" title="Turn Inkflip on or off for this site">
+        <input type="checkbox" id="site" aria-label="Inkflip on for this site">
+        <span></span>
+      </label>
+    </div>
+    <div class="tally" id="tally">
+      <div class="tile flip"><b id="n-flip">–</b><span>Flipped</span></div>
+      <div class="tile logo"><b id="n-logo">–</b><span>Logos</span></div>
+      <div class="tile dim"><b id="n-dim">–</b><span>Dimmed</span></div>
+      <div class="tile none"><b id="n-none">–</b><span>Untouched</span></div>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>What Inkflip changes</h2>
+    <div class="row">
+      <div class="row-text">
+        <div class="row-title"><i class="chip flip"></i>Flip diagrams and charts</div>
+        <div class="row-sub">Black-on-white art becomes light-on-dark</div>
+      </div>
+      <label class="switch small"><input type="checkbox" id="flip" aria-label="Flip diagrams and charts"><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-text">
+        <div class="row-title"><i class="chip logo"></i>Brighten dark logos</div>
+        <div class="row-sub">Black ink on transparent images turns light</div>
+      </div>
+      <label class="switch small"><input type="checkbox" id="logo" aria-label="Brighten dark logos"><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-text">
+        <div class="row-title"><i class="chip dim"></i>Dim bright photos</div>
+        <div class="row-sub">Photos on white are dimmed, never flipped</div>
+      </div>
+      <label class="switch small"><input type="checkbox" id="dim" aria-label="Dim bright photos"><span></span></label>
+    </div>
+    <div class="slider" id="dim-strength">
+      <span>Brightness</span>
+      <input type="range" id="dimLevel" min="0.5" max="0.95" step="0.05" aria-label="Brightness of dimmed photos">
+      <output id="dimLevelOut">80%</output>
+    </div>
+  </section>
+
+  <section class="group">
+    <h2>Viewing</h2>
+    <div class="peek-label">Peek at the original</div>
+    <div class="segmented" role="radiogroup" aria-label="Peek at the original">
+      <button type="button" data-peek="alt" role="radio" id="peek-alt">Hold <kbd id="alt-key">Alt</kbd></button>
+      <button type="button" data-peek="hover" role="radio">Hover</button>
+      <button type="button" data-peek="off" role="radio">Off</button>
+    </div>
+    <div class="row tight">
+      <div class="row-text">
+        <div class="row-title">No white flash</div>
+        <div class="row-sub">On dark pages, new images appear only once checked</div>
+      </div>
+      <label class="switch small"><input type="checkbox" id="hold" aria-label="No white flash"><span></span></label>
+    </div>
+    <div class="row">
+      <div class="row-text">
+        <div class="row-title">Show verdict badges</div>
+        <div class="row-sub">Label each image with what Inkflip decided</div>
+      </div>
+      <label class="switch small"><input type="checkbox" id="badges" aria-label="Show verdict badges"><span></span></label>
+    </div>
+  </section>
+
+  <footer>
+    <span>Right-click any image to correct it</span>
+    <span id="shortcut"></span>
+  </footer>
+
+  <script src="../defaults.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

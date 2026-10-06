@@ -1,0 +1,20 @@
+{
+  "name": "inkflip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that makes white-background images follow dark mode. Runs alongside Dark Reader.",
+  "license": "MIT",
+  "author": "Tianrun Qiu",
+  "scripts": {
+    "test": "node --test test/classifier.test.mjs",
+    "test:real": "node test/real-images.mjs",
+    "test:e2e": "node test/e2e.mjs",
+    "fetch:darkreader": "node scripts/fetch-darkreader.mjs",
+    "icons": "node scripts/build-icons.mjs",
+    "assets": "node scripts/build-assets.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
