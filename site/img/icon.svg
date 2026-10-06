@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- A square of white paper folding into night: the chart line flips from ink to light where it crosses. -->
+  <defs>
+    <clipPath id="sq"><rect x="12" y="12" width="104" height="104" rx="26"/></clipPath>
+    <clipPath id="paper"><polygon points="0,0 128,0 0,128"/></clipPath>
+    <clipPath id="night"><polygon points="128,0 128,128 0,128"/></clipPath>
+  </defs>
+  <g clip-path="url(#sq)">
+    <rect x="12" y="12" width="104" height="104" fill="#17181b"/>
+    <polygon points="0,0 128,0 0,128" fill="#f4f1ea"/>
+    <g fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+      <polyline clip-path="url(#paper)" points="30,88 52,62 70,76 98,40" stroke="#17181b"/>
+      <polyline clip-path="url(#night)" points="30,88 52,62 70,76 98,40" stroke="#f4f1ea"/>
+    </g>
+    <circle cx="98" cy="40" r="9" fill="#f2b45a"/>
+  </g>
+</svg>

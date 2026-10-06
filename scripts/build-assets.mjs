@@ -1,7 +1,7 @@
 // Composes the README hero and the Chrome Web Store images from the real screenshots that
 // `node test/e2e.mjs --live --shots` writes into docs/images.
 //
-//   docs/images/hero.png             README header
+//   docs/images/hero.png             README header (from site/img, see scripts/capture-showcase.mjs)
 //   dist/store/screenshot-1.jpg      1280×800, LeetCode before / after (Chrome Web Store)
 //   dist/store/screenshot-2.jpg      1280×800, the popup and verdict badges
 //   dist/store/promo-440x280.png     small promo tile
@@ -18,6 +18,9 @@ const before = await img('docs/images/leetcode-before.png');
 const after = await img('docs/images/leetcode-after.png');
 const popup = await img('docs/images/popup-leetcode.png');
 const badges = await img('docs/images/badges.png');
+const jpg = async (rel) => 'data:image/jpeg;base64,' + (await readFile(path.join(root, rel))).toString('base64');
+const flowBefore = await jpg('site/img/flow-network-before.jpg');
+const flowAfter = await jpg('site/img/flow-network-after.jpg');
 
 // A window onto a 1440×900 (CSS px) screenshot: region x,y,w,h shown at scale s.
 const crop = (src, x, y, w, h, s) =>
@@ -39,15 +42,15 @@ const base = `
 
 const pages = {
   'docs/images/hero.png': {
-    w: 1420, h: 800, scale: 1.5, html: `
-    <style>${base} .wrap{padding:44px 56px} .row{display:flex;gap:28px;margin-top:34px;align-items:flex-start}
-      .pop{width:286px;border-radius:14px;box-shadow:0 0 0 1px #2a2e34,0 18px 50px #0009}</style>
+    w: 1400, h: 470, scale: 1.5, html: `
+    <style>${base} body{background:#181a1b} .wrap{padding:40px 48px}
+      .label{text-transform:none;letter-spacing:0;font-size:17px;color:#c4c0ba}
+      .row{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:30px}
+      .row .shot{border-radius:12px}</style>
     <div class="wrap">
-      <div class="brand"><img src="${icon}"><div><h1>Inkflip</h1><p>Dark mode for the images Dark Reader leaves white</p></div></div>
-      <div class="row">
-        <div><div class="label">Dark Reader alone</div>${crop(before, 10, 380, 470, 480, 1.0)}</div>
-        <div><div class="label">Dark Reader <b>+ Inkflip</b></div>${crop(after, 10, 380, 470, 480, 1.0)}</div>
-        <div><div class="label">&nbsp;</div><img class="pop" src="${popup}"></div>
+      <div class="row" style="margin-top:0">
+        <div><div class="label">Dark Reader alone</div><img class="shot" style="width:100%;display:block" src="${flowBefore}"></div>
+        <div><div class="label">Dark Reader <b>+ Inkflip</b></div><img class="shot" style="width:100%;display:block" src="${flowAfter}"></div>
       </div>
     </div>`,
   },

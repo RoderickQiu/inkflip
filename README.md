@@ -1,131 +1,165 @@
 <p align="center">
-  <img src="extension/icons/icon-128.png" width="96" alt="Inkflip icon">
+  <img src="extension/icons/icon-128.png" width="88" alt="Inkflip icon">
 </p>
 
 <h1 align="center">Inkflip</h1>
 
-<p align="center"><b>Dark mode for the images Dark Reader leaves white.</b><br>
-A small Chrome extension that runs next to Dark Reader and fixes pictures, one at a time.</p>
+<p align="center"><b>Dark mode for the images Dark Reader leaves white.</b></p>
 
-![LeetCode with Dark Reader, before and after Inkflip](docs/images/hero.png)
+<p align="center">
+  <a href="https://inkflip.r-q.name">Website</a> ·
+  <a href="https://inkflip.r-q.name/download/inkflip-0.2.0.zip">Download for Chrome</a> ·
+  <a href="https://inkflip.r-q.name/privacy">Privacy</a>
+</p>
 
-Dark Reader darkens page colours, but it never looks inside `<img>` elements. Diagrams on
-LeetCode, matplotlib charts, screenshots of docs and black logos keep their white
-backgrounds, so you get bright rectangles on an otherwise dark page, or logos you can't see.
-Inkflip checks each image's pixels and gives it one of four treatments. Everything else stays
-with Dark Reader.
+![A flow-network diagram with Dark Reader alone (edges and labels invisible) and with Inkflip (readable)](docs/images/hero.png)
 
-| Treatment | Which images | What happens |
+You turn on Dark Reader and the page goes dark, but then you scroll into a diagram. A white
+rectangle lights up the room. Or worse, a black chart on a transparent background melts into
+the page and you can't read it at all.
+
+Dark Reader recolours pages, not pictures. Inkflip is the missing half: a small extension that
+runs next to it, looks at every image on the page, and fixes the ones that were drawn for white
+paper. Photos stay exactly as they are.
+
+## Before and after
+
+All captured on real pages with Dark Reader in its default mode, then again with Inkflip added.
+
+<table>
+  <tr>
+    <th width="50%">Dark Reader alone</th>
+    <th width="50%">Dark Reader + Inkflip</th>
+  </tr>
+  <tr>
+    <td><img src="site/img/transformer-before.jpg" alt="Transformer figure, labels invisible"></td>
+    <td><img src="site/img/transformer-after.jpg" alt="Transformer figure, labels readable"></td>
+  </tr>
+  <tr>
+    <td colspan="2">The Transformer figure from <a href="https://arxiv.org/html/1706.03762v7">“Attention Is All You Need”</a>. Its black labels (Inputs, Outputs, Positional Encoding, N×) disappear without Inkflip.</td>
+  </tr>
+  <tr>
+    <td><img src="site/img/readme-logo-before.jpg" alt="Black README logo, nearly invisible"></td>
+    <td><img src="site/img/readme-logo-after.jpg" alt="README logo, clearly visible"></td>
+  </tr>
+  <tr>
+    <td colspan="2">A black logo in a GitHub README (<a href="https://github.com/cosmos/gravity-bridge/issues/358">reported in 2021</a>, still open).</td>
+  </tr>
+  <tr>
+    <td><img src="site/img/leetcode-before.jpg" alt="LeetCode diagram, a white square on a dark page"></td>
+    <td><img src="site/img/leetcode-after.jpg" alt="LeetCode diagram blended into the dark panel"></td>
+  </tr>
+  <tr>
+    <td colspan="2">The example diagram on <a href="https://leetcode.com/problems/k-closest-points-to-origin/">LeetCode 973</a>. The paper takes the exact colour of the panel behind it.</td>
+  </tr>
+</table>
+
+More pairs, with a slider, on [the website](https://inkflip.r-q.name).
+
+## You're not the only one
+
+People have been asking Dark Reader for this for years:
+
+> “bright white diagrams shining in my eyes”<br>
+> [Hacker News](https://news.ycombinator.com/item?id=21196669), 2019
+
+> “Often it's completely invisible (black font on black background)”<br>
+> on Wikipedia formulas, [Dark Reader #1273](https://github.com/darkreader/darkreader/issues/1273)
+
+> “the png gets that dark grey color as it's background, making it unreadable”<br>
+> on chemistry diagrams, [Dark Reader #11205](https://github.com/darkreader/darkreader/issues/11205), still open
+
+Dark Reader's own answer is to write a CSS rule per site, by hand. Inkflip does it per image,
+automatically.
+
+## What it does
+
+Inkflip samples each picture and makes one of four calls:
+
+| | Which images | What happens |
 |---|---|---|
-| **Flip** | Black-on-white line art (diagrams, plots, text screenshots), and transparent diagrams drawn for white paper (light boxes, black lines and labels) | Brightness is inverted and hues are kept. The white paper takes the exact colour of the panel behind it. |
-| **Brighten logos** | Dark ink on a transparent background: logos, formulas, line diagrams with coloured nodes | The ink turns light, so it shows up on dark pages |
-| **Dim** | Photos on white, colourful infographics | Brightness is lowered. These are never flipped, because a flipped photo looks like a negative. |
-| **Leave** | Ordinary photos, images that are already dark | Nothing |
+| **Flip** | Black-on-white diagrams, charts, plots, text screenshots, and transparent diagrams drawn for white paper | Brightness is inverted, colours keep their hue, and the paper becomes the colour of the panel behind it |
+| **Brighten** | Black logos, formulas and line drawings on a transparent background | The ink turns light, so it shows up |
+| **Dim** | Photos on white, colourful infographics | Toned down a little. Never inverted, because a flipped photo looks like a negative |
+| **Leave** | Ordinary photos, images that are already dark, anything Dark Reader or the site already inverted | Nothing |
 
-A wrong flip is far worse than a missed one, so when Inkflip is unsure, it dims or leaves the
-image alone.
+## Why you can leave it on
+
+- **It doesn't flip photos.** It was field-tested on 73 real sites (LeetCode, Wikipedia, arXiv,
+  docs, Stack Overflow, GitHub, IKEA, Amazon, photo sites) and tuned on 393 hand-labelled images
+  from them. It flips none of the photos and gets 389 of the 393 right. When it's unsure, it dims or does
+  nothing.
+- **No white flash.** On a dark page, a new image stays hidden from the moment it appears until
+  it has been checked, then shows up already dark. Verdicts are cached, so revisits are instant.
+- **It gets out of the way.** Light pages, sites you switch off, and images that are already
+  inverted are left alone. Hold <kbd>Option</kbd> (<kbd>Alt</kbd> on Windows) to see any original.
+- **Nothing leaves your browser.** No account, no server, no analytics.
 
 ## Install
 
-The extension isn't on the Chrome Web Store yet. To load it from source:
+The Chrome Web Store listing is on its way. Until then:
 
-1. Download this repository, or a release zip unpacked into a folder.
-2. Open `chrome://extensions` and switch on **Developer mode** (top right).
-3. Click **Load unpacked** and choose the `extension` folder.
+1. Download [inkflip-0.2.0.zip](https://inkflip.r-q.name/download/inkflip-0.2.0.zip) and unzip it.
+2. Open `chrome://extensions` and turn on **Developer mode** (top right).
+3. Click **Load unpacked** and choose the unzipped folder.
 
-This works in Chrome, Edge, Brave, Arc and other Chromium browsers, version 116 or newer.
-Keep Dark Reader in its default **Dynamic** mode.
+Works in Chrome, Edge, Brave, Arc and other Chromium browsers (version 116+). Keep Dark Reader in
+its default **Dynamic** mode.
 
 ## Using it
 
-- **The popup** shows what Inkflip did on the current page, with switches for each treatment,
-  for the current site and for everything.
-- **Peek at the original:** hold <kbd>Option</kbd> (<kbd>Alt</kbd> on Windows and Linux), or
-  pick hover in the popup.
-- **Correct a call:** right-click an image and choose **Inkflip › Flip this image / Dim this
-  image / Show this image as is / Let Inkflip decide**. Inkflip remembers the choice for that
-  site.
-- **Toggle a site:** <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>. You can change the shortcut at
-  `chrome://extensions/shortcuts`.
-- **Verdict badges:** switch them on in the popup to label each image with what Inkflip
-  decided and why.
+- **The popup** shows what Inkflip did on the current page, with switches for each treatment, the
+  current site, and everything.
+- **Correct a call:** right-click an image › **Inkflip** › Flip / Dim / Show as is / Let Inkflip
+  decide. Your choice is remembered for that site.
+- **Toggle a site:** <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> (change it at `chrome://extensions/shortcuts`).
+- **Verdict badges:** switch them on in the popup to label every image with what Inkflip decided
+  and why.
 
-<p align="center"><img src="docs/images/badges.png" alt="Verdict badges on the test page" width="820"></p>
+<p align="center"><img src="docs/images/badges.png" alt="Verdict badges on a test page" width="820"></p>
 
-## How it decides
+## How it works
 
-Each image is sampled down to 128 px with nearest-neighbour scaling, which keeps thin lines
-intact (SVGs are first rendered at full size, so their strokes stay solid too). Seven numbers
-are measured from the sample: how much of it is white paper, whether the border is paper,
-transparency, dark ink, strong colour, the size of the foreground palette, and **tone**, the
-share of soft gradients between neighbouring pixels. Photos are full of soft
-gradients and diagrams have almost none, which is what keeps photos from being flipped. The
-rules, with the reasoning behind each threshold, are in
+Each image is sampled down to 128 px (SVGs are rendered at full size first so thin strokes stay
+crisp). Seven numbers come out: how much is white paper, whether the border is paper,
+transparency, dark ink, strong colour, the size of the palette, and **tone**, the share of soft
+gradients between neighbouring pixels. Photos are full of soft gradients and diagrams have almost
+none, which is what keeps photos safe. The rules and the reasoning behind each threshold are in
 [`extension/classifier.js`](extension/classifier.js).
 
-How it blends in:
+To blend in, Inkflip reads the colour actually painted behind the image (through the browser's
+hit-test stack, because the visible panel isn't always a parent element), inverts the image to
+just under that colour, and blends it with `mix-blend-mode: lighten`. The paper ends up exactly
+the panel's colour, tinted panels included.
 
-- **Exact colour match.** Inkflip reads the colour actually painted behind the image, through
-  the browser's hit-test stack, because a parent element isn't always the one painting it
-  (LeetCode paints its panels on a sibling layer). It inverts to just below that colour, then
-  blends with `mix-blend-mode: lighten`. The image's background ends up exactly the panel's
-  colour, tinted panels included.
-- **No white flash.** On dark pages, a new image stays invisible from the moment it enters the
-  page until it has been checked. It first appears already dark. Verdicts are cached, so on a
-  revisit the image is ready before it has even loaded. A watchdog never keeps a loaded image
-  hidden for more than 2.5 s. Avatars and icons of 48 px or less are never hidden.
-- **Gets out of the way.** On a light page, or a site you've switched off, Inkflip does
-  nothing. It won't flip anything that is already inverted, for example by a Dark Reader
-  `INVERT` site fix, so nothing gets flipped twice.
-
-## Tested
-
-| Suite | What it covers | Result |
+| Test suite | What it covers | Result |
 |---|---|---|
-| `npm test` | Classifier on synthetic diagrams, photos, logos, transparent graphs, white product renders and heatmaps, in Node | 15 / 15 |
-| `npm run test:real` | Classifier inside Chromium on the 19 labelled images from the design phase | 19 / 19 |
-| `npm run eval` | 393 real images from 48 field-tested pages, each labelled by hand with its acceptable treatments | 389 / 393, **0 photos flipped** |
-| `npm run test:e2e -- --live` | The real extension, loaded headless: same-origin, cross-origin and SVG images, theme switching, peek, per-site off, right-click choices, cache, Dark Reader alongside, and live LeetCode. A frame-accurate monitor checks that no image shows white first. | 38 / 38 |
-| `npm run field` | 73 real pages (LeetCode, Wikipedia, docs, papers, Stack Overflow, GitHub READMEs, shops, photo sites, and pages from Dark Reader's issue tracker), before/after screenshots | see `npm run field:report` |
-
-The four images the classifier still misses are diagrams that fade most of their drawing on
-purpose. It leaves them alone rather than risk flipping a photo.
-
-## Privacy
-
-Nothing leaves your browser. Inkflip has no server and no analytics.
-
-- To read a cross-origin image, which the page itself isn't allowed to read, Inkflip downloads
-  that image a second time from the same address. That request goes only to the server the
-  page already loads the image from, with the page's origin as Referer, as the page's own
-  request had.
-- Verdicts are cached in the extension's own IndexedDB, keyed by image URL. Settings and
-  right-click choices are kept in `chrome.storage`.
-
-Full policy: [`PRIVACY.md`](PRIVACY.md).
-
-| Permission | Why |
-|---|---|
-| Read and change data on all sites | To find images on any page, read their pixels and tag them |
-| `storage` | Settings, per-site switches, right-click choices |
-| `contextMenus` | The right-click corrections |
-| `declarativeNetRequestWithHostAccess` | Some image hosts (Stack Overflow's, for one) refuse requests without a Referer, and Chrome sends none on extension requests. A rule limited to Inkflip's own requests sends the page's origin, as the page's own request did. |
+| `npm test` | Classifier on synthetic diagrams, photos, logos, transparent graphs, white product renders and heatmaps | 15 / 15 |
+| `npm run test:real` | Classifier in Chromium on 19 labelled images | 19 / 19 |
+| `npm run eval` | 393 hand-labelled images from 48 real pages | 389 / 393, 0 photos flipped |
+| `npm run test:e2e -- --live` | The real extension, headless: cross-origin and SVG images, theme switches, peek, per-site off, right-click choices, cache, Dark Reader alongside, live LeetCode, and a frame-by-frame check that no image shows white first | 38 / 38 |
 
 ## Limitations
 
-- Only `<img>` elements are handled. CSS background images and inline SVG are Dark Reader's
-  job. `<canvas>` charts and video aren't handled yet.
-- **Colourful transparent diagrams with thin black text** (Spring Security's docs, Phoronix
-  benchmark charts) are left alone: a filter that would rescue their text would also recolour
-  colourful logos. Rescuing only the black ink needs a canvas repaint, planned for a later
-  version. Right-click › Flip fixes them per image today.
-- Images of 48 px or less (avatars, swatches, small icons) are never flipped or dimmed, only
-  brightened when they are dark ink on transparent. There are too few pixels to judge them.
-- Dark Reader's Filter and Filter+ modes invert the whole page. Inkflip notices and stands by,
-  so use Dynamic mode.
-- Images inside shadow DOM aren't handled.
-- Cross-origin images are downloaded twice: once by the page, once by Inkflip. Chrome keeps the
-  two in separate caches.
+- Only `<img>` elements. CSS background images and inline SVG are Dark Reader's job; `<canvas>`
+  charts and video aren't handled yet.
+- Colourful transparent diagrams with thin black text are left alone, because a filter that
+  rescues their text would also recolour colourful logos. Right-click › Flip works for these.
+- Images of 48 px or less (avatars, icons) are never flipped or dimmed: too few pixels to judge.
+- Dark Reader's Filter and Filter+ modes invert the whole page; Inkflip notices and stands by.
+- Images from other sites are downloaded twice, once by the page and once by Inkflip, because the
+  page isn't allowed to share their pixels.
+
+## Permissions
+
+| Permission | Why |
+|---|---|
+| Read and change data on all sites | Find images on any page, read their pixels, and tag them |
+| `storage` | Settings, per-site switches, right-click choices |
+| `contextMenus` | The right-click corrections |
+| `declarativeNetRequestWithHostAccess` | Some image hosts (Stack Overflow's, for one) refuse requests without a Referer, and Chrome sends none from extensions. A rule limited to Inkflip's own requests sends the page's origin, as the page itself did |
+
+Full policy: [PRIVACY.md](PRIVACY.md).
 
 ## Development
 
@@ -134,33 +168,39 @@ npm install                      # Playwright, used by the browser tests and ass
 npm test                         # unit tests, no browser needed
 npm run test:real                # downloads the labelled images, runs the classifier in Chromium
 npm run fetch:darkreader         # Dark Reader's MV3 build, for the e2e test
-npm run test:e2e -- --live       # loads the extension headless; --live adds LeetCode, --shots refreshes docs/images
-npm run assets                   # README hero from docs/images; store images into dist/store
-npm run package                  # dist/inkflip-<version>.zip for the Chrome Web Store
+npm run test:e2e -- --live       # loads the extension headless; --live adds LeetCode
+npm run package                  # dist/inkflip-<version>.zip
 
-npm run field                    # field test: research/field-pages.tsv, headless, dark OS scheme
+npm run field                    # field test on research/field-pages.tsv, headless, dark OS scheme
 npm run field:report             # → screenshots/field/report.html and contact-sheet.png
-npm run harvest                  # download the field images for labelling (research/.cache/field)
+npm run harvest                  # download the field images for labelling
 npm run eval                     # score the classifier against research/field-labels.tsv
+
+npm run showcase                 # recapture the before/after pairs in site/img
+npm run site                     # package + copy the zip into site/ + render site/og.png
+npm run assets                   # README hero; store images into dist/store
 ```
 
 ```
-extension/            the extension itself (load this folder unpacked)
+extension/            the extension (load this folder unpacked)
   classifier.js       pixel signals and verdicts, shared by every part
   content.js          finds, tags and styles images; no-flash hold; badges
   background.js       reads cross-origin images, verdict cache, right-click menu, shortcut
   popup/              the toolbar popup
-docs/images/          README images (and the screenshots they are composed from)
+site/                 the website (static, deployed on Vercel)
 research/             field-test pages, hand-labelled images, harvest and eval tools
-test/                 unit, real-image and end-to-end tests
-scripts/              icons, store assets, packaging
+test/                 unit, real-image, end-to-end and field tests
+scripts/              icons, showcase captures, site and store assets, packaging
+docs/images/          README images
 ```
 
 ## Credits
 
 The idea of judging "ink on paper" by palette and tone came from
-[Kararead PR #84](https://github.com/L-K-M/Kararead/pull/84). Test and field images are
-downloaded from their original sites at test time and are not stored in this repository.
+[Kararead PR #84](https://github.com/L-K-M/Kararead/pull/84). The before/after screenshots show
+pages from arXiv, cp-algorithms, LeetCode, GitHub and a personal blog, each linked to its source;
+field-test images are downloaded at test time and not stored here. The website uses
+[Atkinson Hyperlegible Next](https://github.com/googlefonts/atkinson-hyperlegible-next) (SIL OFL).
 
 Inkflip is not affiliated with Dark Reader.
 

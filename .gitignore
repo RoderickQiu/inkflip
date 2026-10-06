@@ -6,3 +6,6 @@ research/.cache/
 *.zip
 screenshots/
 private/
+site/download/
+site/.vercel/
+site/.env*

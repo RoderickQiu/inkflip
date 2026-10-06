@@ -16,7 +16,9 @@
     "field": "node test/field.mjs",
     "field:report": "node test/field-report.mjs",
     "harvest": "node research/harvest.mjs",
-    "eval": "node research/eval.mjs"
+    "eval": "node research/eval.mjs",
+    "site": "node scripts/package.mjs && node scripts/build-site.mjs",
+    "showcase": "node scripts/capture-showcase.mjs"
   },
   "devDependencies": {
     "playwright": "^1.63.0"

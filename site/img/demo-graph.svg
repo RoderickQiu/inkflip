@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="390" viewBox="0 0 660 390" font-family="Helvetica, Arial, sans-serif">
+  <rect width="660" height="390" fill="#fff"/>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#111"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d6382c"/></marker>
+  </defs>
+  <g stroke="#111" stroke-width="2.4" fill="none" marker-end="url(#a)"><path d="M121.4 181.2L227.8 107.4"/><path d="M274.0 92.0L383.0 92.0"/><path d="M429.4 106.2L528.6 178.9"/><path d="M250.0 116.0L250.0 261.0"/><path d="M265.2 110.6L392.9 267.1"/></g>
+  <g stroke="#d6382c" stroke-width="3.4" fill="none" marker-end="url(#r)"><path d="M122.2 209.6L227.0 273.9"/><path d="M274.0 288.0L383.0 288.0"/><path d="M430.1 275.0L527.7 211.8"/></g>
+  <g fill="#111" font-size="17" text-anchor="middle"><text x="183" y="162">4</text><text x="330" y="112">8</text><text x="473" y="161">2</text><text x="236" y="196">3</text><text x="348" y="186">9</text></g>
+  <g fill="#d6382c" font-size="18" font-weight="700" text-anchor="middle"><text x="168" y="260">1</text><text x="330" y="308">2</text><text x="489" y="260">3</text></g>
+  <g stroke="#111" stroke-width="2.4" fill="#fff"><circle cx="100" cy="196" r="24"/><circle cx="250" cy="92" r="22"/><circle cx="410" cy="92" r="22"/><circle cx="250" cy="288" r="22"/><circle cx="410" cy="288" r="22"/><circle cx="552" cy="196" r="24"/></g>
+  <g fill="#111" font-size="20" text-anchor="middle" dominant-baseline="central"><text x="100" y="196">s</text><text x="250" y="92">a</text><text x="410" y="92">b</text><text x="250" y="288">c</text><text x="410" y="288">d</text><text x="552" y="196">t</text></g>
+  <text x="34" y="366" fill="#555" font-size="15">Shortest path from s to t: s → c → d → t, cost 6</text>
+</svg>
