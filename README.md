@@ -87,6 +87,11 @@ Canvases get the same four calls, so charts and PDF pages that a page draws with
 fixed too (pdf.js, which many sites embed to show PDFs, draws every page on a white canvas).
 Videos are only ever changed when you ask, from the right-click menu.
 
+On a dark site, a light card that holds nothing but pictures (a product screenshot on a pastel
+panel, an app window on a coloured slab) is dimmed as a whole, panel and pictures together. The
+screenshot keeps its real colours and the panel stops glaring. A light panel with text in it is
+something to read, not a frame, so it is left alone.
+
 ## Why you can leave it on
 
 - **It doesn't flip photos.** It was field-tested on 73 real sites (LeetCode, Wikipedia, arXiv,
@@ -152,12 +157,14 @@ repaints. Once a canvas has a verdict, two samples in a row must agree before it
 | `npm test` | Classifier on synthetic diagrams, photos, logos, transparent graphs, white product renders and heatmaps | 15 / 15 |
 | `npm run test:real` | Classifier in Chromium on 19 labelled images | 19 / 19 |
 | `npm run eval` | 393 hand-labelled images from 48 real pages | 389 / 393, 0 photos flipped |
-| `npm run test:e2e -- --live` | The real extension, headless: cross-origin and SVG images, canvases painted early, late, tainted and by WebGL, theme switches, peek, per-site off, right-click choices on images, canvases and video (through transparent layers too), cache, Dark Reader alongside, live LeetCode, and a frame-by-frame check that no image or canvas shows white first | 73 / 73 |
+| `npm run test:e2e -- --live` | The real extension, headless: cross-origin and SVG images, canvases painted early, late, tainted and by WebGL, picture cards on dark sites, theme switches, peek, per-site off, right-click choices on images, canvases and video (through transparent layers too), cache, Dark Reader alongside, live LeetCode, and a frame-by-frame check that no image or canvas shows white first | 91 / 91 |
 
 ## Limitations
 
 - Only `<img>` and `<canvas>` elements are judged. CSS background images and inline SVG are
   Dark Reader's job.
+- A picture card is recognised from its own background colour or gradient. A card painted by a
+  separate layer behind it, or by a background picture, is left alone.
 - Video is never changed on its own: inverting people and scenery makes them look like a
   negative. Right-click › Flip works for screen recordings and slides.
 - Two kinds of canvas can't be read reliably, so they're left alone unless you right-click

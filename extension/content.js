@@ -6,7 +6,9 @@
  * data-inkflip="flip|logo|dim|none". A <video> is only ever tagged by a right-click choice.
  * A single injected stylesheet turns those tags into CSS filters, but only while the element
  * actually sits on a dark background, which is what data-inkflip-l (the backdrop's lightness)
- * records. Page colours, CSS background images and inline SVG are left to Dark Reader.
+ * records. Page colours, CSS background images and inline SVG are left to Dark Reader, with
+ * one exception: a light panel on a dark page that holds nothing but pictures is dimmed as a
+ * whole, pictures included (data-inkflip-card).
  *
  * No white flash: on dark pages a new image carries data-inkflip-wait (opacity 0) from the
  * moment it enters the DOM until its verdict is in, so it first appears already flipped.
@@ -24,6 +26,7 @@
   const ATTR_L = 'data-inkflip-l';
   const WAIT = 'data-inkflip-wait';
   const PEEK = 'data-inkflip-peek';
+  const CARD = 'data-inkflip-card';
   const DARK_PAGE = 0.40; // a backdrop at or below this lightness counts as dark
   const MAX_WAIT = 2500; // ms a loaded, on-screen image may stay hidden while it is checked
   const SMALL = 48; // px: avatars, swatches, icons. Too few pixels to judge reliably and too small
@@ -85,6 +88,7 @@
     }
     if (settings.dim) {
       css += `${on('dim')}[${ATTR_L}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
+      css += `html:not([${PEEK}]) [${CARD}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
     }
     return css;
   }
@@ -195,6 +199,104 @@
     return scheme ? scheme === 'dark' : detectDarkReader() !== null;
   }
 
+  // ------------------------------------------------------------------- cards
+  //
+  // A product shot on a pastel card, an app window on a coloured slab: a light panel on a dark
+  // page that holds nothing but pictures. Flipping the picture would leave the bright panel
+  // around it, and the picture sits on light, so on its own it is left alone. Instead the whole
+  // panel is dimmed, the pictures in it with it, and they keep their colours.
+
+  const CARD_FILL = 0.35; // pictures cover at least this share of the panel...
+  const CARD_HIDDEN = 0.95; // ...but less than this: a panel they cover is never seen
+  const cards = new Map(); // panel -> the elements that found it
+  let textCache = new WeakMap(); // panel -> it holds readable text
+
+  /** Lightness of an element's own background: null if it paints none, undefined if a picture. */
+  function backgroundLightness(cs) {
+    const image = cs.backgroundImage;
+    if (image.includes('url(')) return undefined;
+    if (image.includes('gradient(')) {
+      const stops = (image.match(/(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^()]*\)/g) || [])
+        .map(parseColor).filter((c) => c && c.a >= 0.5);
+      if (stops.length) return stops.reduce((s, c) => s + luma(c), 0) / stops.length;
+    }
+    const c = parseColor(cs.backgroundColor);
+    return c && c.a >= 0.5 ? luma(c) : null;
+  }
+
+  /** Something to read or type into: text, a form field, an editor (placeholders aren't text). */
+  function hasText(el) {
+    let t = textCache.get(el);
+    if (t === undefined) {
+      t = el.innerText.trim() !== '' || el.isContentEditable ||
+        !!el.querySelector('input,textarea,select,button,[contenteditable]:not([contenteditable="false"])');
+      textCache.set(el, t);
+    }
+    return t;
+  }
+
+  /** Share of a panel covered by the pictures inside it. */
+  function pictureShare(el) {
+    const r = el.getBoundingClientRect();
+    let area = 0;
+    for (const m of el.querySelectorAll('img,canvas,video')) {
+      const b = m.getBoundingClientRect();
+      area += Math.max(0, Math.min(b.right, r.right) - Math.max(b.left, r.left)) *
+        Math.max(0, Math.min(b.bottom, r.bottom) - Math.max(b.top, r.top));
+    }
+    return area / Math.max(1, r.width * r.height);
+  }
+
+  /**
+   * The card around el: walking out from it through light panels to the dark page, the
+   * outermost one that is big enough and mostly pictures. None if a light panel on the way
+   * holds text (a page column or a captioned figure: something to read, not a frame) or has
+   * a background picture whose lightness we can't know.
+   */
+  function findCard(el) {
+    if (!isActive() || !settings.dim || pageLightness() > DARK_PAGE) return null;
+    const panels = [];
+    for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      const L = backgroundLightness(cs);
+      if (L === undefined) return null;
+      if (L === null) continue;
+      if (L <= DARK_PAGE) break;
+      if (hasText(n)) return null;
+      // A panel with its own filter keeps it: ours would replace it.
+      if ((cs.filter === 'none' || n.hasAttribute(CARD)) && pictureShare(n) < CARD_HIDDEN) panels.push(n);
+    }
+    for (let i = panels.length - 1; i >= 0; i--) {
+      const r = panels[i].getBoundingClientRect();
+      if (r.width >= 120 && r.height >= 80 && pictureShare(panels[i]) >= CARD_FILL) return panels[i];
+    }
+    return null;
+  }
+
+  function setCard(el, st, panel) {
+    if (st.card === panel) return;
+    if (st.card) {
+      const users = cards.get(st.card);
+      if (users) {
+        users.delete(el);
+        if (!users.size) { cards.delete(st.card); st.card.removeAttribute(CARD); }
+      }
+    }
+    st.card = panel;
+    if (!panel) return;
+    let users = cards.get(panel);
+    if (!users) { cards.set(panel, (users = new Set())); panel.setAttribute(CARD, ''); }
+    users.add(el);
+  }
+
+  /** Whether el belongs to a card, judged before its verdict is in: then it needs none. */
+  function placeCard(el, st) {
+    if (st.kind === 'video' || st.source === 'you') return;
+    const r = el.getBoundingClientRect();
+    setCard(el, st, r.width > SMALL || r.height > SMALL ? findCard(el) : null);
+    if (st.card) el.removeAttribute(WAIT);
+  }
+
   // -------------------------------------------------------------------- hold
 
   function holding() {
@@ -209,7 +311,7 @@
     hold = next;
     for (const img of tracked) {
       const st = state.get(img);
-      if (next && st && !st.verdict) wait(img);
+      if (next && st && !st.verdict && !st.card) wait(img);
       else if (!next) img.removeAttribute(WAIT);
     }
   }
@@ -262,9 +364,11 @@
     const [nw, nh] = natural(img);
     const tiny = (nw > 0 && (nw < 8 || nh < 8)) || (r.width > 0 && (r.width < 8 || r.height < 8));
     const small = r.width > 0 && r.width <= SMALL && r.height <= SMALL;
+    const card = st.kind !== 'video' && st.source !== 'you' && !st.inverted && !tiny && !small ? findCard(img) : null;
+    setCard(img, st, card);
 
     img.setAttribute(ATTR, st.verdict);
-    const on = st.verdict !== 'none' && st.dark && !st.inverted && !tiny && !(small && st.verdict !== 'logo');
+    const on = !card && st.verdict !== 'none' && st.dark && !st.inverted && !tiny && !(small && st.verdict !== 'logo');
     if (on) {
       const l = Math.min(40, Math.floor(ctx.floor * 50) * 2); // rounded down: stays under the backdrop
       if (img.getAttribute(ATTR_L) !== String(l)) img.setAttribute(ATTR_L, String(l));
@@ -272,8 +376,10 @@
       img.removeAttribute(ATTR_L);
     }
     // Reveal now, unless the page is about to turn dark (Dark Reader still loading) and this
-    // image would then need flipping: it stays hidden until then, or until the watchdog.
-    if (on || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny || small) img.removeAttribute(WAIT);
+    // image would then need flipping: it stays hidden until then, or until the watchdog. A page
+    // that is dark on its own, with no Dark Reader, won't change: its light panels stay light.
+    const native = !st.dark && detectDarkReader() === null && pageLightness() <= DARK_PAGE;
+    if (on || card || native || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny || small) img.removeAttribute(WAIT);
     queueBadges();
   }
 
@@ -637,7 +743,7 @@
     const src = img.currentSrc || img.src || '';
     let st = state.get(img);
     if (st && st.src === src) return st;
-    if (st) clearTags(img);
+    if (st) { clearTags(img); setCard(img, st, null); }
     if (!src) {
       state.delete(img);
       img.removeAttribute(WAIT);
@@ -667,7 +773,7 @@
       if (!st) continue;
       const b = e.boundingClientRect;
       if (b.width > 0 && b.width <= SMALL && b.height <= SMALL) el.removeAttribute(WAIT); // small: show at once
-      if (!st.verdict) check(el);
+      if (!st.verdict) { check(el); placeCard(el, st); }
       else if (st.stale) apply(el);
     }
   }, { rootMargin: '800px', scrollMargin: '800px' });
@@ -774,12 +880,21 @@
     if (wasActive !== isActive()) refreshStyle();
     rememberDarkness();
     updateHold();
+    textCache = new WeakMap();
     for (const el of tracked) {
-      if (!el.isConnected) { tracked.delete(el); io.unobserve(el); seen.unobserve(el); continue; }
       const st = state.get(el);
+      if (!el.isConnected) {
+        if (st) setCard(el, st, null);
+        tracked.delete(el); io.unobserve(el); seen.unobserve(el);
+        continue;
+      }
       if (!st) continue;
-      if (!st.verdict) { if (near.has(el)) check(el); continue; }
-      if (near.has(el)) apply(el);
+      if (!st.verdict) {
+        if (near.has(el)) check(el);
+        if (near.has(el) || st.card) placeCard(el, st);
+        continue;
+      }
+      if (near.has(el) || st.card) apply(el); // a card far away still lets go when the page turns light
       else st.stale = true;
     }
     queueBadges();
@@ -921,9 +1036,9 @@
       if (!st || !st.verdict || !img.isConnected) continue;
       const r = img.getBoundingClientRect();
       if (r.width < 24 || r.height < 16 || r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
-      const shown = img.hasAttribute(ATTR_L) ? st.verdict : 'none';
-      const why = st.source === 'you' ? 'your choice'
-        : !st.dark ? 'page is light' : st.inverted ? 'already inverted'
+      const shown = st.card ? 'dim' : img.hasAttribute(ATTR_L) ? st.verdict : 'none';
+      const why = st.card ? 'whole card' : st.source === 'you' ? 'your choice'
+        : !st.dark ? (pageLightness() <= DARK_PAGE ? 'sits on light' : 'page is light') : st.inverted ? 'already inverted'
         : st.signals ? `tone ${st.signals.tone.toFixed(2)} · fg ${st.signals.fg90}` : st.source;
       html += `<b style="left:${Math.max(0, r.left) + 4}px;top:${Math.max(0, r.top) + 4}px;` +
         `background:${BADGE_COLORS[shown]}">${shown} <i>${why}</i></b>`;
@@ -946,6 +1061,7 @@
       if (!img.isConnected) continue;
       const st = state.get(img);
       if (!st) continue;
+      if (st.card) { counts.dim++; continue; }
       if (!st.verdict) { if (st.pending) counts.pending++; continue; }
       const shown = img.hasAttribute(ATTR_L) && treatmentOn(st.verdict) ? st.verdict : 'none';
       counts[shown]++;

@@ -136,6 +136,48 @@ function canvasFixture(theme, other) {
   </body></html>`;
 }
 
+// Picture cards on a dark site: light panels that hold nothing but pictures (dimmed whole),
+// and light panels that must stay as they are.
+function cardFixture(theme) {
+  const dot = '<span style="width:10px;height:10px;border-radius:50%;background:#c8c8c8"></span>';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip card fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#0a0a0a;color:#e8e6e3} body.light{background:#fff;color:#222}
+  h1{font-size:20px;margin:0 0 4px} p{margin:0 0 18px;opacity:.7}
+  .row{display:flex;flex-wrap:wrap;gap:24px;max-width:1240px;margin-bottom:24px}
+  .panel{display:block;position:relative;width:380px;height:260px;border-radius:16px;overflow:hidden;margin:0}
+  .duo{display:flex;align-items:center;justify-content:center;gap:5%}
+  .duo img{width:41%;height:70%;object-fit:cover;border-radius:10px}
+  </style></head><body class="${theme}">
+  <h1>Inkflip card test page</h1><p>Light panels holding pictures, on a ${theme} page.</p>
+  <div class="row">
+    <a class="panel" id="card-shot" style="background:#e3e7ff" aria-hidden="true">
+      <img id="shot" src="/lc_closestplane.jpg" style="position:absolute;top:12%;left:7%;width:113%;height:auto"></a>
+    <a class="panel" id="card-window" style="background:#ea5454" aria-hidden="true">
+      <div id="window" style="position:absolute;top:12%;left:50%;width:62%;transform:translateX(-50%);background:#fff;border-radius:10px 10px 0 0;overflow:hidden">
+        <div style="display:flex;gap:7px;padding:12px 14px">${dot}${dot}${dot}</div>
+        <img id="window-img" src="/mpl_simpleplot.png" style="display:block;width:100%;height:auto"></div></a>
+    <div class="panel duo" id="card-pair" style="background:linear-gradient(#dcebe1,#e8f2ec)">
+      <img id="pair-a" src="/photo_b.jpg"><img id="pair-b" src="/lc_tree.jpg"></div>
+  </div>
+  <div class="row">
+    <figure class="panel" id="reading" style="background:#fff;color:#222;height:auto;padding:12px">
+      <img id="reading-img" src="/lc_tree.jpg" style="display:block;width:100%;height:200px;object-fit:contain">
+      <figcaption>Figure 1. A binary tree.</figcaption></figure>
+    <div class="panel" id="sparse" style="background:#f4f4f5">
+      <img id="sparse-img" src="/lc_word.jpg" style="display:block;width:120px;height:90px;margin:20px"></div>
+    <div class="panel" id="covered" style="background:#fff">
+      <img id="covered-img" src="/photo_a.jpg" style="display:block;width:100%;height:100%;object-fit:cover"></div>
+    <div class="panel" id="editor" style="background:#fff">
+      <img id="editor-img" src="/lc_merge.jpg" style="display:block;width:100%;height:150px;object-fit:cover">
+      <textarea placeholder="Write something" style="border:0;width:90%;margin:10px"></textarea></div>
+    <div class="panel" id="teal" style="background:#0f4f4c">
+      <img id="teal-img" src="/lc_closestplane.jpg" style="display:block;width:80%;margin:10%"></div>
+  </div>
+  <script>window.setTheme = (t) => { document.body.className = t; };</script>
+  </body></html>`;
+}
+
 function serve(handler) {
   return new Promise((resolve) => {
     const s = createServer(handler).listen(0, '127.0.0.1', () => resolve(s));
@@ -153,10 +195,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/(page|canvas)\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas|cards)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end((m[1] === 'page' ? fixture : canvasFixture)(m[2], OTHER));
+    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture }[m[1]](m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -446,6 +488,67 @@ console.log('\nCanvases and video on a dark fixture page');
   await page.waitForTimeout(800);
   s = await shown('cv-chart');
   check('light page: canvases are neither hidden nor filtered', s.opacity === '1' && s.filter === 'none' && s.l === null, JSON.stringify(s));
+  await context.close();
+}
+
+// ------------------------------------------------------------ part 1c: picture cards
+
+console.log('\nPicture cards on a dark fixture page');
+{
+  const { context, ctl } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/cards/dark');
+  const imgs = ['shot', 'window-img', 'pair-a', 'pair-b', 'reading-img', 'sparse-img', 'covered-img', 'editor-img', 'teal-img'];
+  check('every image on the card page gets a verdict', await settled(page, imgs));
+  await page.waitForTimeout(300);
+  const look = () => page.evaluate(() => {
+    const out = {};
+    for (const el of document.querySelectorAll('[id]')) {
+      const cs = getComputedStyle(el);
+      out[el.id] = { card: el.hasAttribute('data-inkflip-card'), filter: cs.filter, opacity: cs.opacity, l: el.getAttribute('data-inkflip-l') };
+    }
+    return out;
+  });
+  let s = await look();
+  const dimmed = (id) => s[id].card && s[id].filter === 'brightness(0.8)';
+  const plain = (id) => s[id].filter === 'none' && s[id].opacity === '1' && s[id].l === null;
+  check('a screenshot on a pastel panel: the whole panel is dimmed', dimmed('card-shot'), JSON.stringify(s['card-shot']));
+  check('…and the screenshot gets no filter of its own', plain('shot'), JSON.stringify(s.shot));
+  check('an app window on a coloured slab: the outer slab is the card', dimmed('card-window') && !s.window.card, JSON.stringify([s['card-window'], s.window]));
+  check('…and the window\'s picture is left as is inside it', plain('window-img'), JSON.stringify(s['window-img']));
+  check('two shots on a gradient panel share one dimmed card', dimmed('card-pair') && plain('pair-a') && plain('pair-b'), JSON.stringify([s['card-pair'], s['pair-a'], s['pair-b']]));
+  const left = ['reading', 'sparse', 'covered', 'editor', 'teal'].filter((id) => s[id].card || s[id].filter !== 'none');
+  check('captioned, sparse, fully covered, editable and dark panels are not cards', !left.length, left.join(', '));
+  check('…and their light-backed images stay as they are', ['reading-img', 'sparse-img', 'covered-img', 'editor-img'].every(plain),
+    JSON.stringify(['reading-img', 'sparse-img', 'covered-img', 'editor-img'].map((id) => s[id])));
+  check('an image on a dark panel is still flipped on its own', s['teal-img'].l !== null && s['teal-img'].filter.startsWith('invert('), JSON.stringify(s['teal-img']));
+  const f1 = await flashes(page);
+  check('no white frame on the card page', !Object.keys(f1).length, JSON.stringify(f1));
+
+  const cardFilter = () => page.evaluate(() => getComputedStyle(document.getElementById('card-shot')).filter);
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(document.getElementById('card-shot')).filter === 'none', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows the card as it is', peeked);
+  check('releasing Alt dims it again', await waitFor(page, () => getComputedStyle(document.getElementById('card-shot')).filter !== 'none'));
+
+  await settings(ctl, { dim: false });
+  check('switching off Dim lets the cards go', await waitFor(page, () => !document.querySelector('[data-inkflip-card]')), await cardFilter());
+  await settings(ctl, { dim: true });
+  check('switching it on finds them again', await waitFor(page, () => document.querySelectorAll('[data-inkflip-card]').length === 3));
+
+  await page.evaluate(() => window.setTheme('light'));
+  check('page turns light → no cards', await waitFor(page, () => !document.querySelector('[data-inkflip-card]')));
+  await page.evaluate(() => window.setTheme('dark'));
+  check('page turns dark again → the cards return', await waitFor(page, () => document.querySelectorAll('[data-inkflip-card]').length === 3));
+
+  // A page re-renders and the screenshot moves out of its card onto the dark panel.
+  await page.evaluate(() => { document.getElementById('teal').append(document.getElementById('shot')); window.setTheme('dark x'); });
+  check('a card that loses its picture is let go', await waitFor(page, () => !document.getElementById('card-shot').hasAttribute('data-inkflip-card')));
+  check('…and the picture is flipped on its new dark panel', await waitFor(page, () => {
+    const el = document.getElementById('shot');
+    return el.getAttribute('data-inkflip-l') !== null && getComputedStyle(el).filter.startsWith('invert(');
+  }), JSON.stringify((await look()).shot));
   await context.close();
 }
 
