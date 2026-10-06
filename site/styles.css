@@ -62,8 +62,12 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; background: trans
   font-size: 19px;
   text-decoration: none;
 }
+.top-nav { display: flex; align-items: center; gap: 28px; }
 .top-link { color: var(--soft); text-decoration: none; font-size: 16px; }
 .top-link:hover { color: var(--ink); }
+.top-link.gh { display: inline-flex; align-items: center; gap: 8px; }
+.top-link.gh svg { fill: currentColor; }
+.fine a { color: var(--soft); }
 
 /* ------------------------------------------------------------------ hero */
 
