@@ -9,16 +9,11 @@
 //
 // Needs test/real-images.mjs to have run once (it downloads the images) and, for the
 // Dark Reader part, its MV3 build unpacked in test/.cache/darkreader.
-import { chromium } from 'playwright';
 import { createServer } from 'node:http';
-import { readFile, mkdtemp, access } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import os from 'node:os';
+import { readFile, access } from 'node:fs/promises';
 import path from 'node:path';
+import { root, EXT, DR, launch, settings, flashes, waitFor } from './lib.mjs';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
-const EXT = path.join(root, 'extension');
-const DR = path.join(root, 'test/.cache/darkreader');
 const IMAGES = path.join(root, 'test/.cache/images');
 const SHOTS = path.join(root, 'docs/images');
 const argv = new Set(process.argv.slice(2));
@@ -56,6 +51,7 @@ function fixture(theme, other) {
   <figure><img id="list" src="/lc_merge.jpg"><figcaption>Coloured diagram</figcaption></figure>
   <figure><img id="photo" src="/photo_b.jpg"><figcaption>Ordinary photo</figcaption></figure>
   </div>
+  <p style="margin-top:18px">Avatar-sized photo on white: <img id="avatar" src="${other}/prod_fly.jpg" style="display:inline-block;width:32px;height:32px;vertical-align:middle;object-fit:cover"></p>
   <h1 style="margin-top:28px">Panel painted by a sibling layer</h1>
   <div style="position:relative;width:420px;padding:16px">
     <div style="position:absolute;inset:0;background:#2a2d31;border-radius:10px"></div>
@@ -95,113 +91,11 @@ const BASE = `http://127.0.0.1:${main.address().port}`;
 
 // ---------------------------------------------------------------------- helpers
 
-let userAgent = null;
-async function plainUserAgent() {
-  if (!userAgent) {
-    const b = await chromium.launch({ channel: 'chromium', headless: true });
-    userAgent = (await (await b.newPage()).evaluate(() => navigator.userAgent)).replace('HeadlessChrome', 'Chrome');
-    await b.close();
-  }
-  return userAgent;
-}
-
-// Runs in every page before its own scripts: counts frames in which an image is on screen,
-// loaded, fully opaque and unfiltered while the page behind it is dark. The check runs in a
-// ResizeObserver callback, which comes after every requestAnimationFrame callback and right
-// before paint, so it sees exactly what gets painted. Any such frame for an image that
-// Inkflip ended up flipping or dimming was a white flash.
-function flashMonitor() {
-  window.__white = {};
-  const lum = (s) => {
-    const m = (s || '').match(/[\d.]+/g);
-    if (!m) return null;
-    const [r, g, b, a = 1] = m.map(Number);
-    return a < 0.5 ? null : (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  };
-  const check = () => {
-    if (!document.body) return;
-    let L = lum(getComputedStyle(document.body).backgroundColor);
-    if (L === null) L = lum(getComputedStyle(document.documentElement).backgroundColor);
-    if (L === null || L >= 0.4) return;
-    for (const img of document.images) {
-      if (!img.complete || !img.naturalWidth) continue;
-      const cs = getComputedStyle(img);
-      if (cs.opacity === '0' || cs.filter !== 'none' || cs.visibility === 'hidden') continue;
-      const r = img.getBoundingClientRect();
-      if (!r.width || r.bottom < 0 || r.top > innerHeight) continue;
-      const key = img.id || img.currentSrc;
-      window.__white[key] = (window.__white[key] || 0) + 1;
-    }
-  };
-  const probe = document.createElement('flash-probe');
-  probe.style.cssText = 'position:fixed;left:0;top:0;height:1px;width:1px;pointer-events:none;visibility:hidden';
-  new ResizeObserver(check).observe(probe);
-  let wide = false;
-  const tick = () => {
-    if (!probe.isConnected) document.documentElement.appendChild(probe);
-    probe.style.width = (wide = !wide) ? '2px' : '1px'; // a size change every frame
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-/** White frames shown by images that Inkflip ended up flipping, brightening or dimming. */
-const flashes = (page) => page.evaluate(() => {
-  const out = {};
-  for (const img of document.images) {
-    const v = img.getAttribute('data-inkflip');
-    if (!img.hasAttribute('data-inkflip-l') || !['flip', 'logo', 'dim'].includes(v)) continue;
-    const key = img.id || img.currentSrc;
-    if (window.__white[key]) out[key.split('/').pop()] = window.__white[key];
-  }
-  return out;
-});
-
-async function launch(extensions) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'inkflip-e2e-'));
-  const context = await chromium.launchPersistentContext(dir, {
-    channel: 'chromium',
-    headless: !argv.has('--headed'),
-    userAgent: await plainUserAgent(),
-    viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: 2,
-    args: [
-      `--disable-extensions-except=${extensions.join(',')}`, `--load-extension=${extensions.join(',')}`,
-      '--disable-blink-features=AutomationControlled',
-    ],
-  });
-  await context.addInitScript(flashMonitor);
-  const ours = () => context.serviceWorkers().find((w) => w.url().endsWith('/background.js'));
-  let sw = ours();
-  for (let i = 0; !sw && i < 50; i++) {
-    await new Promise((r) => setTimeout(r, 100));
-    sw = ours();
-  }
-  const id = sw.url().split('/')[2];
-  // An extension page to drive chrome.storage from (service workers can go to sleep).
-  const ctl = await context.newPage();
-  await ctl.goto(`chrome-extension://${id}/popup/popup.html`);
-  return { context, id, ctl };
-}
-
-const settings = (ctl, patch) => ctl.evaluate(async (patch) => {
-  const { settings } = await chrome.storage.sync.get('settings');
-  await chrome.storage.sync.set({ settings: { ...settings, ...patch } });
-}, patch);
-
 const verdictOf = (page, id) => page.evaluate((id) => {
   const el = document.getElementById(id);
   return { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: getComputedStyle(el).filter };
 }, id);
 
-async function waitFor(page, fn, arg, timeout = 8000) {
-  try {
-    await page.waitForFunction(fn, arg, { timeout, polling: 100 });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 const settled = (page, ids) => waitFor(page, (ids) => ids.every((id) => {
   const el = document.getElementById(id);
@@ -257,6 +151,15 @@ console.log('Inkflip on a dark fixture page');
     }, null, 2000),
   (await verdictOf(page, 'same-diagram')).filter);
 
+  await settled(page, ['avatar']);
+  const avatar = await page.evaluate(() => {
+    const el = document.getElementById('avatar');
+    const cs = getComputedStyle(el);
+    return { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: cs.filter, opacity: cs.opacity };
+  });
+  check('a photo at avatar size is classified but never flipped, dimmed or hidden',
+    avatar.v === 'dim' && avatar.l === null && avatar.filter === 'none' && avatar.opacity === '1', JSON.stringify(avatar));
+
   await settled(page, ['layered']);
   const layered = await verdictOf(page, 'layered');
   check('backdrop comes from what is painted behind, not the parent chain (#2a2d31 → 16)', layered.l === '16', JSON.stringify(layered));
@@ -269,8 +172,6 @@ console.log('Inkflip on a dark fixture page');
 
   if (argv.has('--shots')) {
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(SHOTS, 'fixture-dark.png') });
-    console.log('  · popup:', JSON.stringify(await popupShot(context, id, '/page/dark', 'popup.png')));
     await settings(ctl, { badges: true });
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(SHOTS, 'badges.png') });
@@ -341,10 +242,6 @@ if (!haveDr) {
   await page.waitForTimeout(300);
   const f3 = await flashes(page);
   check('no white frame while Dark Reader and Inkflip start together', !Object.keys(f3).length, JSON.stringify(f3));
-  if (argv.has('--shots')) {
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(SHOTS, 'fixture-with-darkreader.png') });
-  }
 
   if (argv.has('--live')) {
     console.log('\nLeetCode 973, Dark Reader + Inkflip');

@@ -51,12 +51,8 @@ const results = await page.evaluate(async (files) => {
     img.src = '/' + f;
     await img.decode();
     // Mirrors sampleElement() in content.js.
-    const [tw, th] = C.sampleSize(img.naturalWidth, img.naturalHeight);
-    const cv = new OffscreenCanvas(tw, th);
-    const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, 0, 0, tw, th);
-    out[f] = C.classify(ctx.getImageData(0, 0, tw, th).data, tw, th);
+    const px = C.pixels(img, img.naturalWidth, img.naturalHeight, /\.svg$/i.test(img.src));
+    out[f] = C.classify(px.data, px.w, px.h);
   }
   return out;
 }, rows.map((r) => r.file));

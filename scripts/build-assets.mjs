@@ -2,9 +2,9 @@
 // `node test/e2e.mjs --live --shots` writes into docs/images.
 //
 //   docs/images/hero.png             README header
-//   docs/store/screenshot-1.jpg      1280×800, LeetCode before / after
-//   docs/store/screenshot-2.jpg      1280×800, the popup and verdict badges
-//   docs/store/promo-440x280.png     small promo tile
+//   dist/store/screenshot-1.jpg      1280×800, LeetCode before / after (Chrome Web Store)
+//   dist/store/screenshot-2.jpg      1280×800, the popup and verdict badges
+//   dist/store/promo-440x280.png     small promo tile
 import { chromium } from 'playwright';
 import { readFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -51,7 +51,7 @@ const pages = {
       </div>
     </div>`,
   },
-  'docs/store/screenshot-1.jpg': {
+  'dist/store/screenshot-1.jpg': {
     w: 1280, h: 800, scale: 1, html: `
     <style>${base} .wrap{padding:40px 48px} .row{display:flex;gap:32px;margin-top:30px}
       h2{margin:26px 0 0;font-size:19px;font-weight:500;color:#c9c6c0}</style>
@@ -63,7 +63,7 @@ const pages = {
       </div>
     </div>`,
   },
-  'docs/store/screenshot-2.jpg': {
+  'dist/store/screenshot-2.jpg': {
     w: 1280, h: 800, scale: 1, html: `
     <style>${base} .wrap{padding:40px 48px} .row{display:flex;gap:36px;margin-top:30px;align-items:flex-start}
       .pop{width:330px;border-radius:14px;box-shadow:0 0 0 1px #2a2e34,0 18px 50px #0009}</style>
@@ -75,7 +75,7 @@ const pages = {
       </div>
     </div>`,
   },
-  'docs/store/promo-440x280.png': {
+  'dist/store/promo-440x280.png': {
     w: 440, h: 280, scale: 1, html: `
     <style>${base} body{display:flex;align-items:center;justify-content:center;height:280px;
       background:radial-gradient(120% 140% at 0% 0%,#1d1f23 0%,#0e0f11 60%)}
@@ -84,7 +84,7 @@ const pages = {
   },
 };
 
-await mkdir(path.join(root, 'docs/store'), { recursive: true });
+await mkdir(path.join(root, 'dist/store'), { recursive: true });
 const browser = await chromium.launch();
 for (const [out, { w, h, scale, html }] of Object.entries(pages)) {
   const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: scale });

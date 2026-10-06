@@ -1,0 +1,74 @@
+id	category	url	expect
+lc-973	algorithms	https://leetcode.com/problems/k-closest-points-to-origin/description/	flip: axis diagram (JPEG)
+lc-tree-depth	algorithms	https://leetcode.com/problems/maximum-depth-of-binary-tree/description/	flip: binary tree diagram
+wiki-quadratic	wiki	https://en.wikipedia.org/wiki/Quadratic_formula	logo: math formula SVGs; flip: plots
+gfg-binary-tree	algorithms	https://www.geeksforgeeks.org/dsa/binary-tree-data-structure/	flip: tree diagrams
+mpl-simple-plot	docs	https://matplotlib.org/stable/gallery/lines_bars_and_markers/simple_plot.html	flip: white matplotlib plot
+unsplash-control	control	https://unsplash.com/s/photos/landscape	none: photos only
+lc-invert-tree	algorithms	https://leetcode.com/problems/invert-binary-tree/description/	flip: tree diagrams
+lc-list-cycle	algorithms	https://leetcode.com/problems/linked-list-cycle/description/	flip: linked list diagram
+lc-word-search	algorithms	https://leetcode.com/problems/word-search/description/	flip or dim: grid with orange cells
+lc-rain-water	algorithms	https://leetcode.com/problems/trapping-rain-water/description/	flip: bar chart diagram
+gfg-intro-tree	algorithms	https://www.geeksforgeeks.org/dsa/introduction-to-binary-tree/	flip: white webp diagrams
+programiz-tree	algorithms	https://www.programiz.com/dsa/binary-tree	logo: dark ink on transparent
+cpalgo-segtree	algorithms	https://cp-algorithms.com/data_structures/segment_tree.html	edge: transparent, light nodes with dark text
+cpalgo-edmonds	algorithms	https://cp-algorithms.com/graph/edmonds_karp.html	logo: dark ink on transparent
+mdn-box-model	docs	https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Styling_basics/Box_model	flip: box model diagram; none: devtools screenshot
+python-turtle	docs	https://docs.python.org/3/library/turtle.html	flip: turtle star drawing
+k8s-architecture	docs	https://kubernetes.io/docs/concepts/architecture/	flip: SVG diagram with white rect
+k8s-components	docs	https://kubernetes.io/docs/concepts/overview/components/	edge: transparent SVG with blue boxes
+mpl-bar-stacked	docs	https://matplotlib.org/stable/gallery/lines_bars_and_markers/bar_stacked.html	flip: white plot
+sklearn-classifiers	docs	https://scikit-learn.org/stable/auto_examples/classification/plot_classifier_comparison.html	flip or dim: colourful plot grid
+pytorch-nn	docs	https://docs.pytorch.org/tutorials/beginner/blitz/neural_networks_tutorial.html	flip: convnet diagram
+git-branching	docs	https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell	edge: transparent pastel boxes
+arxiv-llama2	papers	https://arxiv.org/html/2307.09288	flip: white charts
+arxiv-transformer	papers	https://arxiv.org/html/1706.03762v7	edge/flip: architecture figure
+distill-aug-rnns	papers	https://distill.pub/2016/augmented-rnns/	edge: transparent SVG img
+distill-zoom-in	papers	https://distill.pub/2020/circuits/zoom-in/	none: photos and feature visualisations
+wiki-euler	wiki	https://en.wikipedia.org/wiki/Euler%27s_formula	logo: math SVGs
+wiki-graph-theory	wiki	https://en.wikipedia.org/wiki/Graph_theory	logo: dark ink graphs on transparent
+wiki-rlc	wiki	https://en.wikipedia.org/wiki/RLC_circuit	flip: circuit diagram; none: photo; logo: formulas
+wiki-binary-tree	wiki	https://en.wikipedia.org/wiki/Binary_tree	logo: transparent tree diagram
+wiki-airpods	shop	https://en.wikipedia.org/wiki/AirPods	logo: wordmark; dim: product photo; none: photo
+so-sorted-array	qa	https://stackoverflow.com/questions/11227809/why-is-conditional-processing-of-a-sorted-array-faster-than-of-an-unsorted-array	none: photo; flip: diagram
+so-merge-rebase	qa	https://stackoverflow.com/questions/16666089/whats-the-difference-between-git-merge-and-git-rebase	flip: commit graphs
+mse-visual-math	qa	https://math.stackexchange.com/questions/733754/visually-stunning-math-concepts-which-are-easy-to-explain	flip + none: mixed images
+colah-lstm	blogs	https://colah.github.io/posts/2015-08-Understanding-LSTMs/	edge: transparent coloured blocks
+jalammar-transformer	blogs	https://jalammar.github.io/illustrated-transformer/	flip: white illustrations
+tds-nn-math	blogs	https://towardsdatascience.com/the-math-behind-neural-networks-a34a51b93873/	flip + none
+substack-charts	blogs	https://www.noahpinion.blog/p/the-140000-poverty-line-is-very-silly	flip: white charts; none: header photo
+medium-karpathy	blogs	https://karpathy.medium.com/yes-you-should-understand-backprop-e2f06eab496b	flip: white diagram
+gh-express	github	https://github.com/expressjs/express	logo: black wordmark
+gh-flask	github	https://github.com/pallets/flask	logo: black wordmark
+gh-micrograd	github	https://github.com/karpathy/micrograd	flip: graphviz; none: puppy photo
+gh-system-design	github	https://github.com/donnemartin/system-design-primer	logo/edge: transparent diagrams
+ikea-billy	shop	https://www.ikea.com/us/en/p/billy-bookcase-white-00263850/	dim: products on white
+amazon-product	shop	https://www.amazon.com/dp/B0CHWRXH8B	dim: product on white
+guardian-photos	control	https://www.theguardian.com/artanddesign/gallery/2026/oct/02/the-week-around-the-world-in-20-pictures	none: news photos
+flickr-explore	control	https://www.flickr.com/explore	none: photos
+nasa-iotd	control	https://www.nasa.gov/image-of-the-day/	none: photos
+wiki-substitution	complaints	https://en.wikipedia.org/wiki/Substitution_reaction	logo: black chemistry diagrams on transparent (DR #11205)
+wiki-ldopa	complaints	https://en.wikipedia.org/wiki/L-DOPA	logo: black structure diagram on transparent (DR #11205)
+wiki-apple	complaints	https://en.wikipedia.org/wiki/Apple_Inc.	logo: black Apple logo (Phabricator T370074)
+wiki-invertible	complaints	https://en.wikipedia.org/wiki/Invertible_matrix	regression: Dark Reader inverts the formulas itself (DR #1273)
+nndl-chap1	complaints	http://neuralnetworksanddeeplearning.com/chap1.html	regression: Dark Reader inverts every PNG here (DR #1598)
+habr-formulas	complaints	https://habr.com/ru/articles/787156/	regression: formulas inverted by DR; flip: white PNG diagrams (DR #12174)
+gmu-physics	complaints	https://physics.gmu.edu/~dmaria/590%20Web%20Page/public_html/qm_topics/perturbation/index.html	logo: transparent formula GIFs (DR #6100)
+mdn-negotiation	complaints	https://developer.mozilla.org/en-US/docs/Web/HTTP/Content_negotiation	flip: white diagram (mdn/content #29644)
+rust-ownership	complaints	https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html	flip: Graphviz SVG on white (rust-lang/book #74)
+python-pathlib	complaints	https://docs.python.org/3/library/pathlib.html	flip: white boxes on transparent (cpython #103960)
+mslearn-files	complaints	https://learn.microsoft.com/en-us/windows/uwp/files/best-practices-for-writing-to-files	flip: sequence diagram (windows-dev-docs #3177)
+spring-security	complaints	https://docs.spring.io/spring-security/reference/servlet/architecture.html	flip: transparent boxes with black text (spring-security #15983)
+arxiv-2110	complaints	https://arxiv.org/html/2110.03901v1	flip: white figures (arXiv html_feedback #7091)
+so-seaborn	complaints	https://stackoverflow.com/questions/41384040	logo: transparent seaborn plots (Meta SO 405271)
+lc-1334	complaints	https://leetcode.com/problems/find-the-city-with-the-smallest-number-of-neighbors-at-a-threshold-distance/description/	flip: graph examples (LeetCode-Feedback #23273)
+gh-gravity-bridge	complaints	https://github.com/cosmos/gravity-bridge	logo: black SVG logo (#358)
+gh-awesome-cv	complaints	https://github.com/posquit0/Awesome-CV	logo: transparent résumé screenshots (#364)
+gh-nano-neuron	complaints	https://github.com/trekhleb/nano-neuron	flip: formula PNGs (HN 21723509)
+substack-em	complaints	https://theengineeringmanager.substack.com/p/what-are-leading-and-lagging-indicators	logo: transparent diagrams with black captions
+blog-kakaotalk	complaints	https://stulle123.github.io/posts/kakaotalk/secret-chat/	logo: transparent PNG diagram (HN 41101742)
+xkcd-1205	complaints	https://xkcd.com/1205/	flip: line-art comic (r/xkcd)
+tomsguide-deal	complaints	https://www.tomsguide.com/computing/gpus/nvidia-geforce-rtx-5060-ti-16gb-deal-50-dollars-off-below-msrp	logo: merchant logos; dim: products (DR #14658)
+phoronix-svg	complaints	https://www.phoronix.com/review/orange-pi-5/2	regression: DR inverts SVG charts (DR #10968)
+medium-prophet	complaints	https://medium.com/future-vision/the-math-of-prophet-46864fa9c55a	flip: formula images on white (DR #2100)
+amazon-airpods	complaints	https://www.amazon.com/dp/B0D1XD1ZV3	dim: product photos on white (DR #1122)

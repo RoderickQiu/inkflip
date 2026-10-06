@@ -1,6 +1,6 @@
 # Privacy policy
 
-*Last updated: 5 October 2026*
+*Last updated: 6 October 2026*
 
 Inkflip is a browser extension that adjusts how images look on dark web pages. It does not
 collect, sell or share personal data.
@@ -11,8 +11,9 @@ collect, sell or share personal data.
   how to display them. This happens on your device.
 - **Cross-origin images.** When a page shows an image from another site, Inkflip cannot read
   its pixels directly, so it downloads the same image again from the same address. That request
-  goes only to the server the page already loads the image from. Inkflip contacts no other
-  server.
+  goes only to the server the page already loads the image from, and carries the page's
+  origin as its Referer, exactly as the page's own request did (some image hosts refuse
+  requests without one). Inkflip contacts no other server.
 
 ## What it stores, on your device only
 

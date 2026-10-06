@@ -10,7 +10,7 @@
 importScripts('defaults.js', 'classifier.js');
 
 const C = self.InkflipClassifier;
-const MODEL = 1; // bump when the classifier changes; older cache entries are ignored
+const MODEL = 2; // bump when the classifier changes; older cache entries are ignored
 const CACHE_LIMIT = 20000;
 const DEFAULTS = self.INKFLIP_DEFAULTS;
 
@@ -78,7 +78,43 @@ async function prune() {
 
 const inflight = new Map(); // url -> Promise, so repeated images are fetched once
 
-async function analyzeUrl(url) {
+// Chrome sends no Referer on extension requests, and hotlink-protected image hosts (Stack
+// Overflow's i.sstatic.net, for one) refuse requests without one. A session rule, limited to
+// our own requests, sends the page's origin instead: the page sent that same Referer when it
+// loaded the image, so the host learns nothing new.
+const refererByRule = new Map();
+
+async function sendRefererFor(url, page) {
+  let host, referer;
+  try {
+    host = new URL(url).hostname;
+    referer = new URL(page).origin + '/';
+  } catch (e) {
+    return;
+  }
+  if (!/^https?:/.test(referer)) return;
+  let h = 0;
+  for (const ch of host) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const id = (h % 1000000) + 1;
+  if (refererByRule.get(id) === host + referer) return;
+  refererByRule.set(id, host + referer);
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [id],
+    addRules: [{
+      id,
+      priority: 1,
+      action: { type: 'modifyHeaders', requestHeaders: [{ header: 'referer', operation: 'set', value: referer }] },
+      condition: {
+        urlFilter: `||${host}/`,
+        initiatorDomains: [chrome.runtime.id],
+        resourceTypes: ['xmlhttprequest', 'other'],
+      },
+    }],
+  }).catch(() => {});
+}
+
+async function analyzeUrl(url, page) {
+  await sendRefererFor(url, page);
   const res = await fetch(url, { credentials: 'include', cache: 'force-cache' });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const type = res.headers.get('content-type') || '';
@@ -88,22 +124,18 @@ async function analyzeUrl(url) {
     return { svg: await blob.text() };
   }
   const bitmap = await createImageBitmap(blob);
-  const [tw, th] = C.sampleSize(bitmap.width, bitmap.height);
-  const canvas = new OffscreenCanvas(tw, th);
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bitmap, 0, 0, tw, th);
+  const px = C.pixels(bitmap, bitmap.width, bitmap.height, false);
   bitmap.close();
-  const result = C.classify(ctx.getImageData(0, 0, tw, th).data, tw, th);
+  const result = C.classify(px.data, px.w, px.h);
   cachePut(url, result).catch(() => {});
   return result;
 }
 
-async function analyze(url) {
+async function analyze(url, page) {
   const hit = (await cacheGet([url]).catch(() => ({})))[url];
   if (hit) return hit;
   if (!inflight.has(url)) {
-    inflight.set(url, analyzeUrl(url).finally(() => inflight.delete(url)));
+    inflight.set(url, analyzeUrl(url, page).finally(() => inflight.delete(url)));
   }
   return inflight.get(url);
 }
@@ -111,7 +143,7 @@ async function analyze(url) {
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || typeof msg !== 'object') return;
   if (msg.type === 'analyze') {
-    analyze(msg.url).then(reply, () => reply(null));
+    analyze(msg.url, msg.page || (sender.tab && sender.tab.url)).then(reply, () => reply(null));
     return true;
   }
   if (msg.type === 'lookup') {

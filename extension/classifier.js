@@ -11,7 +11,8 @@
  *   none  everything else
  *
  * A wrong flip is far worse than a missed one, so every uncertain case falls to dim or none.
- * The thresholds come from the labelled set in research/test-images.tsv.
+ * The thresholds come from labelled real images: research/test-images.tsv (19) and
+ * research/field-labels.tsv (393, from 48 field-tested pages; score with research/eval.mjs).
  */
 (function (root) {
   'use strict';
@@ -24,6 +25,27 @@
   function sampleSize(w, h) {
     const s = Math.min(1, SAMPLE_MAX / Math.max(w, h));
     return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
+  }
+
+  /**
+   * Pixels of a decoded image (img element, ImageBitmap, canvas) sampled down to at most
+   * SAMPLE_MAX, nearest-neighbour. Vector images (`crisp`) are first rendered at their natural
+   * size: drawn straight at 128 px their thin strokes would be anti-aliased into soft grey
+   * gradients that look like a photograph. Throws a SecurityError if the source is tainted.
+   */
+  function pixels(source, w, h, crisp) {
+    const [tw, th] = sampleSize(w, h);
+    let src = source;
+    if (crisp) {
+      const s = Math.min(1, 2048 / Math.max(w, h));
+      src = new OffscreenCanvas(Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s)));
+      src.getContext('2d').drawImage(source, 0, 0, src.width, src.height);
+    }
+    const canvas = new OffscreenCanvas(tw, th);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, 0, 0, tw, th);
+    return { data: ctx.getImageData(0, 0, tw, th).data, w: tw, h: th };
   }
 
   /** Signals for an RGBA buffer (Uint8ClampedArray or similar) of w × h pixels. */
@@ -101,14 +123,23 @@
 
   /** Verdict for a set of signals. */
   function decide(s) {
-    const photo = s.tone >= 0.30 || s.fg90 >= 40;
+    // Photos: continuous tone or a rich palette. With no dark ink at all (a white product on
+    // white, say), even mild shading is enough: diagrams always carry some ink.
+    const photo = s.tone >= 0.30 || s.fg90 >= 40 || (s.dark < 0.01 && s.tone >= 0.15);
     if (s.transp >= 0.2) {
-      // Cut-out image: only rescue it if it is plain dark ink.
-      return s.dark >= 0.6 && s.color <= 0.1 && !photo ? 'logo' : 'none';
+      if (photo) return 'none'; // a cut-out photograph
+      // Mostly dark ink, maybe with coloured nodes: black logos, formulas, line diagrams.
+      if (s.dark >= 0.55 && s.color <= 0.6) return 'logo';
+      // Light or grey fills with dark lines and labels: a diagram drawn for white paper, whose
+      // ink would vanish on a dark page. White logos made for dark pages carry no ink: left alone.
+      if (s.color <= 0.3 && (s.dark >= 0.05 || (s.light >= 0.4 && s.dark >= 0.015))) return 'flip';
+      return 'none';
     }
     if (s.light >= 0.5 && s.border >= 0.6) {
       // Sits on white paper.
       if (photo) return 'dim';
+      // Colour reaching the frame (a heatmap, a map) carries meaning in its lightness: dim it.
+      if (s.color >= 0.15 && s.border < 0.8) return 'dim';
       return s.color <= 0.30 ? 'flip' : 'dim';
     }
     if (s.light >= 0.4 && !photo) return 'dim'; // light flat graphic with colour at the edges
@@ -120,7 +151,7 @@
     return { verdict: decide(signals), signals };
   }
 
-  const api = { SAMPLE_MAX, LIGHT, DARK, sampleSize, measure, decide, classify };
+  const api = { SAMPLE_MAX, LIGHT, DARK, sampleSize, pixels, measure, decide, classify };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.InkflipClassifier = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

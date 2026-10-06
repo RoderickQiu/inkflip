@@ -22,7 +22,9 @@
   const WAIT = 'data-inkflip-wait';
   const PEEK = 'data-inkflip-peek';
   const DARK_PAGE = 0.40; // a backdrop at or below this lightness counts as dark
-  const MAX_WAIT = 1500; // ms a loaded, on-screen image may stay hidden while it is checked
+  const MAX_WAIT = 2500; // ms a loaded, on-screen image may stay hidden while it is checked
+  const SMALL = 48; // px: avatars, swatches, icons. Too few pixels to judge reliably and too small
+                    // to glare: never hidden, never flipped or dimmed, only rescued if dark ink
 
   const HOST = topHost();
   const OVR_KEY = 'ovr:' + HOST;
@@ -39,6 +41,7 @@
   const state = new WeakMap(); // img -> { src, verdict, signals, source, pending, provisional, clock }
   const tracked = new Set();
   const near = new WeakSet(); // images within the IntersectionObserver margin
+  const visible = new WeakSet(); // images actually on screen: checked first
 
   // ---------------------------------------------------------------- stylesheet
 
@@ -58,13 +61,15 @@
     if (settings.flip || settings.logo) {
       // Invert so white lands just below the backdrop's darkest channel, then blend with
       // `lighten`: the image's background takes the backdrop's exact colour (tinted panels
-      // included) while the now-light ink stays on top.
+      // included) while the now-light ink stays on top. The element's own background colour
+      // goes: sites give transparent images one (Wikipedia: white, darkened by Dark Reader),
+      // and the filter would invert it into a light box.
       for (let l = 0; l <= 40; l += 2) {
         const sel = [];
         if (settings.flip) sel.push(`${on('flip')}[${ATTR_L}="${l}"]${hover}`);
         if (settings.logo) sel.push(`${on('logo')}[${ATTR_L}="${l}"]${hover}`);
         css += `${sel.join(',')}{filter:invert(${(1 - l / 100).toFixed(2)}) hue-rotate(180deg) !important;` +
-          'mix-blend-mode:lighten !important}\n';
+          'mix-blend-mode:lighten !important;background-color:transparent !important}\n';
       }
     }
     if (settings.dim) {
@@ -239,9 +244,10 @@
     st.stale = false;
     const nw = img.naturalWidth, nh = img.naturalHeight;
     const tiny = (nw > 0 && (nw < 8 || nh < 8)) || (r.width > 0 && (r.width < 8 || r.height < 8));
+    const small = r.width > 0 && r.width <= SMALL && r.height <= SMALL;
 
     img.setAttribute(ATTR, st.verdict);
-    const on = st.verdict !== 'none' && st.dark && !st.inverted && !tiny;
+    const on = st.verdict !== 'none' && st.dark && !st.inverted && !tiny && !(small && st.verdict !== 'logo');
     if (on) {
       const l = Math.min(40, Math.floor(ctx.floor * 50) * 2); // rounded down: stays under the backdrop
       if (img.getAttribute(ATTR_L) !== String(l)) img.setAttribute(ATTR_L, String(l));
@@ -250,7 +256,7 @@
     }
     // Reveal now, unless the page is about to turn dark (Dark Reader still loading) and this
     // image would then need flipping: it stays hidden until then, or until the watchdog.
-    if (on || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny) img.removeAttribute(WAIT);
+    if (on || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny || small) img.removeAttribute(WAIT);
     queueBadges();
   }
 
@@ -261,33 +267,23 @@
 
   // ---------------------------------------------------------------- analysis
 
-  const sampler = new OffscreenCanvas(1, 1);
-  const sctx = sampler.getContext('2d', { willReadFrequently: true });
-
   /** Classify a decoded image element on our own canvas; null if the canvas is tainted. */
-  function sampleElement(img) {
+  function sampleElement(img, svg) {
     const w = img.naturalWidth || img.width || 300;
     const h = img.naturalHeight || img.height || 150;
-    const [tw, th] = C.sampleSize(w, h);
-    sampler.width = tw;
-    sampler.height = th;
-    sctx.imageSmoothingEnabled = false;
-    sctx.clearRect(0, 0, tw, th);
-    sctx.drawImage(img, 0, 0, tw, th);
-    let data;
     try {
-      data = sctx.getImageData(0, 0, tw, th).data;
+      const px = C.pixels(img, w, h, svg);
+      return C.classify(px.data, px.w, px.h);
     } catch (e) {
       return null; // cross-origin without CORS: the service worker reads it instead
     }
-    return C.classify(data, tw, th);
   }
 
   /** SVG fetched by the service worker: rasterise it here, where there is a DOM. */
   function sampleSvg(text) {
     return new Promise((resolve) => {
       const im = new Image();
-      im.onload = () => { try { resolve(sampleElement(im)); } catch (e) { resolve(null); } };
+      im.onload = () => resolve(sampleElement(im, true));
       im.onerror = () => resolve(null);
       im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
     });
@@ -318,12 +314,12 @@
     const src = st.src;
     let res = null, source = 'page';
     if (loaded(img, st) && (!remote(src) || img.crossOrigin !== null)) {
-      try { res = sampleElement(img); } catch (e) { res = null; }
+      res = sampleElement(img, isSvg(src));
       if (res && cacheable(src)) send({ type: 'remember', url: src, result: res });
     }
     if (!res && cacheable(src)) {
       source = 'fetched';
-      const r = await send({ type: 'analyze', url: src });
+      const r = await send({ type: 'analyze', url: src, page: location.href });
       if (r && r.svg) {
         res = await sampleSvg(r.svg);
         if (res) send({ type: 'remember', url: src, result: res });
@@ -354,7 +350,8 @@
 
   function pump() {
     while (running < 6 && queue.length) {
-      const img = queue.shift();
+      const first = queue.findIndex((q) => visible.has(q));
+      const img = queue.splice(first >= 0 ? first : 0, 1)[0];
       running++;
       analyze(img).finally(() => { running--; pump(); });
     }
@@ -430,6 +427,8 @@
       near.add(img);
       const st = consider(img);
       if (!st) continue;
+      const b = e.boundingClientRect;
+      if (b.width > 0 && b.width <= SMALL && b.height <= SMALL) img.removeAttribute(WAIT); // small: show at once
       if (!st.verdict) schedule(img);
       else if (st.stale) apply(img);
     }
@@ -439,6 +438,8 @@
   // backdrop once they are actually visible.
   const seen = new IntersectionObserver((entries) => {
     for (const e of entries) {
+      if (e.isIntersecting) visible.add(e.target);
+      else visible.delete(e.target);
       const st = e.isIntersecting && state.get(e.target);
       if (st && st.verdict && st.provisional) apply(e.target);
     }
@@ -446,6 +447,7 @@
 
   document.addEventListener('load', (e) => {
     const img = e.target;
+    if (img instanceof HTMLLinkElement) { themeChanged(); return; } // a stylesheet arrived
     if (!(img instanceof HTMLImageElement)) return;
     const st = consider(img);
     if (st && !st.verdict && near.has(img)) schedule(img);

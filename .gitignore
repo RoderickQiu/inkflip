@@ -4,3 +4,5 @@ test/.cache/
 research/.cache/
 .DS_Store
 *.zip
+screenshots/
+private/

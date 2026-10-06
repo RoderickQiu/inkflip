@@ -122,6 +122,48 @@ function darkScreenshot() {
   return img;
 }
 
+function whiteProductRender() {
+  // A white bookcase rendered on white: soft grey shading, no dark ink at all (IKEA).
+  const img = image(128, 128, [255, 255, 255]);
+  for (let y = 12; y < 120; y++) {
+    for (let x = 44; x < 84; x++) {
+      const v = 200 + 30 * Math.sin(x / 9) + (y % 18 < 2 ? -12 : 0) + rand() * 4;
+      put(img, x, y, [v, v, v - 2]);
+    }
+  }
+  return img;
+}
+
+function transparentGraph({ fill, edge = [10, 10, 10] }) {
+  // Nodes and edges on a transparent canvas, drawn for white paper (cp-algorithms, Wikipedia).
+  const img = image(128, 96, [0, 0, 0, 0]);
+  const nodes = [[20, 48], [64, 16], [64, 80], [108, 48]];
+  for (const [a, b] of [[0, 1], [0, 2], [1, 3], [2, 3], [1, 2]]) {
+    line(img, nodes[a][0], nodes[a][1], nodes[b][0], nodes[b][1], edge, 3);
+  }
+  for (const [cx, cy] of nodes) {
+    for (let y = -10; y <= 10; y++) for (let x = -10; x <= 10; x++) if (x * x + y * y <= 100) put(img, cx + x, cy + y, fill);
+    ring(img, cx, cy, 10, edge);
+  }
+  return img;
+}
+
+function whiteLogo() {
+  // A white logo made for dark backgrounds: no ink, must stay as it is.
+  const img = image(128, 64, [0, 0, 0, 0]);
+  rect(img, 10, 16, 40, 48, [255, 255, 255]);
+  rect(img, 50, 24, 118, 40, [250, 250, 250]);
+  return img;
+}
+
+function heatmap() {
+  // Pastel cells reaching the edges: lightness encodes the data.
+  const img = image(120, 120, [255, 255, 255]);
+  const cells = [[250, 235, 235], [240, 190, 180], [200, 40, 40], [215, 230, 245], [245, 245, 245], [230, 120, 100]];
+  for (let r = 0; r < 6; r++) for (let c = 0; c < 6; c++) rect(img, c * 20, r * 20, c * 20 + 20, r * 20 + 20, cells[(r * 7 + c * 3) % 6]);
+  return img;
+}
+
 // ------------------------------------------------------------------------- tests
 
 test('black-on-white diagram flips', () => {
@@ -156,6 +198,28 @@ test('an image that is already dark is left alone', () => {
 
 test('a fully transparent image is left alone', () => {
   assert.equal(verdict(image(32, 32, [0, 0, 0, 0])), 'none');
+});
+
+test('a white product rendered on white is dimmed, never flipped', () => {
+  const s = C.measure(whiteProductRender().data, 128, 128);
+  assert.ok(s.dark < 0.01, JSON.stringify(s));
+  assert.equal(C.decide(s), 'dim');
+});
+
+test('a transparent diagram with light nodes and black edges is flipped', () => {
+  assert.equal(verdict(transparentGraph({ fill: [235, 235, 235] })), 'flip');
+});
+
+test('coloured nodes with black edges on transparent are brightened', () => {
+  assert.equal(verdict(transparentGraph({ fill: [30, 60, 200] })), 'logo');
+});
+
+test('a white logo on transparent is left alone', () => {
+  assert.equal(verdict(whiteLogo()), 'none');
+});
+
+test('a heatmap is dimmed, not flipped', () => {
+  assert.equal(verdict(heatmap()), 'dim');
 });
 
 test('sampleSize keeps aspect ratio and caps at 128', () => {
