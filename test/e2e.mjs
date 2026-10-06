@@ -1,6 +1,7 @@
 // End-to-end test: loads the real extension into Playwright's Chromium and checks it on a
-// local fixture page (same-origin, cross-origin and SVG images), then again next to
-// Dark Reader. `--live` adds LeetCode problem 973. `--shots` writes the README images.
+// local fixture page (same-origin, cross-origin and SVG images), on a second one with
+// canvases and a video (including the right-click choices), then again next to Dark Reader.
+// `--live` adds LeetCode problem 973. `--shots` writes the README images.
 //
 //   node test/e2e.mjs [--live] [--shots] [--headed]
 //
@@ -63,6 +64,78 @@ function fixture(theme, other) {
   </body></html>`;
 }
 
+// Canvases painted in every way the content script has to cope with, plus a video, and
+// transparent overlays of the kind that hide them from Chrome's own right-click menu.
+function canvasFixture(theme, other) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip canvas fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#181a1b;color:#e8e6e3} body.light{background:#fff;color:#222}
+  h1{font-size:20px;margin:0 0 4px} p{margin:0 0 18px;opacity:.7}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px 18px;max-width:1240px}
+  figure{margin:0;position:relative} figcaption{font-size:12.5px;opacity:.7;margin-top:6px}
+  canvas,video,img{display:block;width:100%;height:170px;object-fit:contain}
+  .overlay{position:absolute;left:0;right:0;top:0;height:170px}
+  </style></head><body class="${theme}">
+  <h1 id="title">Inkflip canvas and video test page</h1><p>Canvases painted in different ways, and a video, on a ${theme} background.</p>
+  <div class="grid">
+  <figure><canvas id="cv-chart" width="600" height="340"></canvas><figcaption>Chart on a white canvas</figcaption></figure>
+  <figure><canvas id="cv-ink" width="600" height="340"></canvas><figcaption>Black ink, transparent canvas</figcaption></figure>
+  <figure><canvas id="cv-photo" width="600" height="340"></canvas><figcaption>Photo drawn into a canvas</figcaption></figure>
+  <figure><canvas id="cv-late" width="600" height="340"></canvas><figcaption>Painted after 1.2 s</figcaption></figure>
+  <figure><canvas id="cv-tainted" width="600" height="340"></canvas><figcaption>Cross-origin image drawn in</figcaption></figure>
+  <figure><canvas id="cv-webgl" width="600" height="340"></canvas><figcaption>WebGL, cleared to white</figcaption></figure>
+  <figure><canvas id="cv-covered" width="600" height="340"></canvas><div class="overlay" id="cv-overlay"></div><figcaption>Chart under a transparent layer</figcaption></figure>
+  <figure><img id="img-covered" src="/lc_tree.jpg"><div class="overlay"></div><figcaption>Image under a transparent layer</figcaption></figure>
+  <figure><img id="img-plain" src="/lc_closestplane.jpg"><figcaption>Plain image</figcaption></figure>
+  <figure><video id="vid" muted autoplay playsinline></video><div class="overlay" style="height:50px"></div><figcaption>Video of a white slide; a transparent strip on top</figcaption></figure>
+  </div>
+  <script>
+  function chart(id, white) {
+    const c = document.getElementById(id), g = c.getContext('2d');
+    if (white) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
+    g.strokeStyle = '#000'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(40, 300); g.lineTo(570, 300); g.moveTo(40, 300); g.lineTo(40, 30); g.stroke();
+    g.beginPath();
+    [[40, 260], [140, 180], [240, 220], [340, 110], [440, 140], [560, 60]].forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.stroke();
+    g.fillStyle = '#000'; g.font = 'bold 30px sans-serif'; g.fillText('Throughput', 70, 56);
+    c.dataset.painted = '';
+  }
+  chart('cv-chart', true); chart('cv-ink', false); chart('cv-covered', true);
+  setTimeout(() => chart('cv-late', true), 1200);
+  const photo = new Image();
+  photo.onload = () => {
+    const c = document.getElementById('cv-photo');
+    c.getContext('2d').drawImage(photo, 0, 0, c.width, c.height);
+    c.dataset.painted = '';
+  };
+  photo.src = '/photo_b.jpg';
+  const foreign = new Image(); // no CORS: drawing it taints the canvas
+  foreign.onload = () => {
+    const c = document.getElementById('cv-tainted'), g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(foreign, 0, 0, c.width, c.height);
+  };
+  foreign.src = '${other}/lc_tree.jpg';
+  const gl = document.getElementById('cv-webgl').getContext('webgl');
+  gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  // The video plays a white "slide" drawn on a canvas that is never added to the page.
+  const slides = document.createElement('canvas'); slides.width = 640; slides.height = 360;
+  const sg = slides.getContext('2d');
+  (function slide() {
+    sg.fillStyle = '#fff'; sg.fillRect(0, 0, 640, 360);
+    sg.fillStyle = '#000'; sg.font = 'bold 44px sans-serif'; sg.fillText('Quarterly review', 40, 90);
+    sg.fillRect(40, 130, 420, 10); sg.fillRect(40, 170, 300, 10);
+    requestAnimationFrame(slide);
+  })();
+  const vid = document.getElementById('vid');
+  vid.srcObject = slides.captureStream(30);
+  vid.play().catch(() => {});
+  window.setTheme = (t) => { document.body.className = t; };
+  </script>
+  </body></html>`;
+}
+
 function serve(handler) {
   return new Promise((resolve) => {
     const s = createServer(handler).listen(0, '127.0.0.1', () => resolve(s));
@@ -80,10 +153,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/page\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end(fixture(m[1], OTHER));
+    return res.end((m[1] === 'page' ? fixture : canvasFixture)(m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -219,6 +292,163 @@ console.log('Inkflip on a dark fixture page');
   await context.close();
 }
 
+// ---------------------------------------------- part 1b: canvases, video, right-click
+
+console.log('\nCanvases and video on a dark fixture page');
+{
+  const { context, ctl, sw } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/canvas/dark');
+  const painted = ['cv-chart', 'cv-ink', 'cv-photo', 'cv-covered', 'cv-tainted'];
+  check('every painted canvas gets a verdict', await settled(page, painted));
+  await page.waitForTimeout(300);
+  const f1 = await flashes(page);
+  delete f1['cv-late']; // painted after the hold ran out: a short white moment is expected
+  check('no canvas ever shows white first', !Object.keys(f1).length, JSON.stringify(f1));
+
+  const shown = async (id) => page.evaluate((id) => {
+    const el = document.getElementById(id);
+    const cs = getComputedStyle(el);
+    return { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: cs.filter, opacity: cs.opacity };
+  }, id);
+  const styled = (s) => s.l !== null && s.filter.startsWith('invert(');
+  let s = await shown('cv-chart');
+  check('a chart on a white canvas is flipped', s.v === 'flip' && styled(s) && s.opacity === '1', JSON.stringify(s));
+  s = await shown('cv-ink');
+  check('black ink on a transparent canvas is made light', ['logo', 'flip'].includes(s.v) && styled(s), JSON.stringify(s));
+  s = await shown('cv-covered');
+  check('a canvas under a transparent layer is flipped too', s.v === 'flip' && styled(s), JSON.stringify(s));
+  s = await shown('cv-photo');
+  check('a photo drawn into a canvas is left alone', s.v === 'none' && s.filter === 'none' && s.opacity === '1', JSON.stringify(s));
+  s = await shown('cv-tainted');
+  check('a canvas holding a cross-origin picture is left alone and shown', s.v === 'none' && s.filter === 'none' && s.opacity === '1', JSON.stringify(s));
+  check('a WebGL canvas is shown within a second and left alone', await waitFor(page, () => {
+    const el = document.getElementById('cv-webgl');
+    const cs = getComputedStyle(el);
+    return cs.opacity === '1' && cs.filter === 'none' && el.getAttribute('data-inkflip') !== 'flip';
+  }, null, 1500) && (await page.waitForTimeout(1000), (await shown('cv-webgl')).filter === 'none'),
+  JSON.stringify(await shown('cv-webgl')));
+  check('a canvas painted late is flipped once it is painted', await waitFor(page, () => {
+    const el = document.getElementById('cv-late');
+    return el.getAttribute('data-inkflip') === 'flip' && el.hasAttribute('data-inkflip-l');
+  }, null, 5000), JSON.stringify(await shown('cv-late')));
+
+  await page.evaluate(() => { document.getElementById('cv-chart').width = 500; window.chart('cv-chart', true); });
+  s = await shown('cv-chart');
+  check('resizing a canvas keeps its flip while it repaints', s.v === 'flip' && styled(s), JSON.stringify(s));
+  await page.waitForTimeout(1200);
+  s = await shown('cv-chart');
+  check('…and it is still flipped after the recheck', s.v === 'flip' && styled(s), JSON.stringify(s));
+
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(document.getElementById('cv-chart')).filter === 'none', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows the original canvas', peeked);
+
+  // The right-click menu. Chrome's native menu can't be opened headless, so the test checks
+  // that Chrome accepted every entry, moves and right-clicks the real mouse, then calls the
+  // service worker's click handler directly.
+  const missing = await sw.evaluate(async () => {
+    const ids = ['image', 'video', 'under-image', 'under-video']
+      .flatMap((m) => ['', ':flip', ':dim', ':none', ':sep', ':auto'].map((c) => `inkflip:${m}${c}`));
+    const errors = [];
+    for (const id of ids) {
+      await new Promise((done) => chrome.contextMenus.update(id, {}, () => {
+        if (chrome.runtime.lastError) errors.push(`${id}: ${chrome.runtime.lastError.message}`);
+        done();
+      }));
+    }
+    return errors;
+  });
+  check('all four Inkflip menus exist, each with its five entries', !missing.length, missing.join('; '));
+  const under = () => sw.evaluate(() => self.inkflipTest.underShown());
+  const point = async (sel, fy = 0.5) => {
+    const b = await page.locator(sel).boundingBox();
+    return [b.x + b.width / 2, b.y + b.height * fy];
+  };
+  async function hover(sel, fy) {
+    const [x, y] = await point(sel, fy);
+    await page.mouse.move(x - 3, y);
+    await page.mouse.move(x, y);
+  }
+  async function untilUnder(want) {
+    for (let i = 0; i < 30; i++) {
+      if ((await under()) === want) return true;
+      await page.waitForTimeout(50);
+    }
+    return false;
+  }
+  await hover('#title');
+  check('menu: nothing extra over text', await untilUnder(null), String(await under()));
+  await hover('#cv-chart');
+  check('menu: a canvas gets the Inkflip menu', await untilUnder('image'), String(await under()));
+  await hover('#img-plain');
+  check('menu: a plain image is left to Chrome\'s own image menu', await untilUnder(null), String(await under()));
+  await hover('#cv-overlay');
+  check('menu: a canvas under a transparent layer gets it', await untilUnder('image'), String(await under()));
+  await hover('#vid', 0.85);
+  check('menu: a plain video is left to Chrome\'s own video menu', await untilUnder(null), String(await under()));
+  await hover('#vid', 0.1);
+  check('menu: a video under a transparent layer gets the video menu', await untilUnder('video'), String(await under()));
+
+  async function choose(sel, menuItemId, info = {}, fy) {
+    const [x, y] = await point(sel, fy);
+    await page.mouse.move(x, y);
+    await page.mouse.click(x, y, { button: 'right' });
+    await sw.evaluate(async ({ menuItemId, info }) => {
+      const tab = (await chrome.tabs.query({})).find((t) => (t.url || '').includes('/canvas/'));
+      await self.inkflipTest.menuClick({ menuItemId, frameId: 0, pageUrl: tab.url, ...info }, tab);
+    }, { menuItemId, info });
+  }
+  const verdictIs = (id, v, filtered) => waitFor(page, ({ id, v, filtered }) => {
+    const el = document.getElementById(id);
+    return el.getAttribute('data-inkflip') === v && (getComputedStyle(el).filter !== 'none') === filtered;
+  }, { id, v, filtered }, 4000);
+
+  await choose('#cv-overlay', 'inkflip:under-image:none');
+  check('right-click › Show as is, on a covered canvas', await verdictIs('cv-covered', 'none', false), JSON.stringify(await shown('cv-covered')));
+  check('…changes that canvas only', (await shown('cv-chart')).v === 'flip');
+  await choose('#cv-overlay', 'inkflip:under-image:auto');
+  check('right-click › Let Inkflip decide flips it again', await verdictIs('cv-covered', 'flip', true), JSON.stringify(await shown('cv-covered')));
+
+  await choose('#img-covered', 'inkflip:under-image:none');
+  check('right-click › Show as is, on an image under a transparent layer', await verdictIs('img-covered', 'none', false), JSON.stringify(await shown('img-covered')));
+  const stored = await ctl.evaluate(async () => (await chrome.storage.local.get('ovr:127.0.0.1'))['ovr:127.0.0.1'] || {});
+  check('…remembered by the image\'s URL, like any image', stored[BASE + '/lc_tree.jpg'] === 'none', JSON.stringify(stored));
+  await choose('#img-covered', 'inkflip:under-image:auto');
+  check('…and undone', await verdictIs('img-covered', 'flip', true), JSON.stringify(await shown('img-covered')));
+
+  await choose('#cv-webgl', 'inkflip:under-image:flip');
+  check('right-click › Flip works on a WebGL canvas', await verdictIs('cv-webgl', 'flip', true), JSON.stringify(await shown('cv-webgl')));
+  await choose('#cv-webgl', 'inkflip:under-image:auto');
+  check('…and Let Inkflip decide leaves it alone again', await waitFor(page, () => {
+    const el = document.getElementById('cv-webgl');
+    return getComputedStyle(el).filter === 'none';
+  }, null, 4000), JSON.stringify(await shown('cv-webgl')));
+
+  await choose('#vid', 'inkflip:video:flip', { mediaType: 'video', srcUrl: '' }, 0.85);
+  check('right-click › Flip this video', await verdictIs('vid', 'flip', true), JSON.stringify(await shown('vid')));
+  await choose('#cv-chart', 'inkflip:under-image:none');
+  check('right-click › Show as is, on a canvas', await verdictIs('cv-chart', 'none', false), JSON.stringify(await shown('cv-chart')));
+
+  await page.reload();
+  check('reload: the video choice is remembered', await verdictIs('vid', 'flip', true), JSON.stringify(await shown('vid')));
+  check('reload: the canvas choice is remembered', await verdictIs('cv-chart', 'none', false), JSON.stringify(await shown('cv-chart')));
+  await choose('#vid', 'inkflip:video:auto', { mediaType: 'video', srcUrl: '' }, 0.85);
+  check('Let Inkflip decide leaves a video alone again', await waitFor(page, () => {
+    const el = document.getElementById('vid');
+    return !el.hasAttribute('data-inkflip') && getComputedStyle(el).filter === 'none';
+  }, null, 4000), JSON.stringify(await shown('vid')));
+  await choose('#cv-chart', 'inkflip:under-image:auto');
+  check('…and a canvas is judged again', await verdictIs('cv-chart', 'flip', true), JSON.stringify(await shown('cv-chart')));
+
+  await page.goto(BASE + '/canvas/light');
+  await page.waitForTimeout(800);
+  s = await shown('cv-chart');
+  check('light page: canvases are neither hidden nor filtered', s.opacity === '1' && s.filter === 'none' && s.l === null, JSON.stringify(s));
+  await context.close();
+}
+
 // ------------------------------------------------------- part 2: next to Dark Reader
 
 let haveDr = true;
@@ -242,6 +472,14 @@ if (!haveDr) {
   await page.waitForTimeout(300);
   const f3 = await flashes(page);
   check('no white frame while Dark Reader and Inkflip start together', !Object.keys(f3).length, JSON.stringify(f3));
+
+  const cvPage = await context.newPage();
+  await cvPage.goto(BASE + '/canvas/light');
+  check('a white canvas chart flips under Dark Reader', await waitFor(cvPage, () => {
+    const el = document.getElementById('cv-chart');
+    return el.getAttribute('data-inkflip') === 'flip' && getComputedStyle(el).filter.startsWith('invert(');
+  }, null, 10000));
+  await cvPage.close();
 
   if (argv.has('--live')) {
     console.log('\nLeetCode 973, Dark Reader + Inkflip');

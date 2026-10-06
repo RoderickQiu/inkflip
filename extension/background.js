@@ -5,7 +5,8 @@
  *   them under the extension's host permission, samples them on an OffscreenCanvas and
  *   returns only the verdict and signals. Nothing leaves the machine.
  * - Caches verdicts by image URL in IndexedDB so repeat visits never flash white.
- * - Owns the right-click menu (per-image corrections) and the keyboard shortcut.
+ * - Owns the right-click menu (corrections for images, canvases and videos) and the keyboard
+ *   shortcut.
  */
 importScripts('defaults.js', 'classifier.js');
 
@@ -153,43 +154,101 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.type === 'remember' && msg.result) {
     cachePut(msg.url, msg.result).catch(() => {});
   }
+  if (msg.type === 'menu') showUnder(msg.kind || null, msg.t);
 });
 
 // --------------------------------------------------------- right-click corrections
 
-const MENU = [
-  ['inkflip-flip', 'Flip this image (make it dark)'],
-  ['inkflip-dim', 'Dim this image'],
-  ['inkflip-none', 'Show this image as is'],
-  ['inkflip-sep', null],
-  ['inkflip-auto', 'Let Inkflip decide'],
+const CHOICES = [
+  ['flip', (noun) => `Flip this ${noun} (make it dark)`],
+  ['dim', (noun) => `Dim this ${noun}`],
+  ['none', (noun) => `Show this ${noun} as is`],
+  ['sep', null],
+  ['auto', () => 'Let Inkflip decide'],
 ];
+
+// Chrome knows by itself when an image or a video was right-clicked. A canvas matches no
+// context but "all", and neither does an image or a video under a transparent layer, so the
+// two "under" menus are hidden until the content script reports one under the pointer.
+// A canvas is called an image here, as in Chrome's own "Save image as".
+const MENUS = [
+  { id: 'image', noun: 'image', contexts: ['image'] },
+  { id: 'video', noun: 'video', contexts: ['video'] },
+  { id: 'under-image', noun: 'image', contexts: ['all'], hidden: true },
+  { id: 'under-video', noun: 'video', contexts: ['all'], hidden: true },
+];
+const PAGES = ['http://*/*', 'https://*/*', 'file:///*'];
+const ignore = () => void chrome.runtime.lastError;
+
+function createMenus() {
+  chrome.contextMenus.removeAll(() => {
+    for (const m of MENUS) {
+      const base = { contexts: m.contexts, ...(m.hidden ? { documentUrlPatterns: PAGES } : {}) };
+      const parentId = 'inkflip:' + m.id;
+      chrome.contextMenus.create({ ...base, id: parentId, title: 'Inkflip', ...(m.hidden ? { visible: false } : {}) }, ignore);
+      for (const [choice, title] of CHOICES) {
+        const id = `${parentId}:${choice}`;
+        chrome.contextMenus.create(title
+          ? { ...base, id, parentId, title: title(m.noun) }
+          : { ...base, id, parentId, type: 'separator' }, ignore);
+      }
+    }
+  });
+  underShown = null;
+}
+
+let underShown; // 'image' | 'video' | null; undefined after a restart, until the next report
+let underTime = 0;
+
+/** Show the "under" menu for a kind of element, or neither. Late reports are dropped. */
+function showUnder(kind, t = Date.now()) {
+  if (t < underTime) return; // frames report out of order when the pointer crosses between them
+  underTime = t;
+  if (kind === underShown) return;
+  underShown = kind;
+  for (const m of MENUS) {
+    if (m.hidden) chrome.contextMenus.update('inkflip:' + m.id, { visible: kind === m.noun }, ignore);
+  }
+}
+
+chrome.tabs.onActivated.addListener(() => showUnder(null));
 
 chrome.runtime.onInstalled.addListener(async () => {
   const { settings } = await chrome.storage.sync.get('settings');
   await chrome.storage.sync.set({ settings: { ...DEFAULTS, ...(settings || {}) } });
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'inkflip', title: 'Inkflip', contexts: ['image'] });
-    for (const [id, title] of MENU) {
-      chrome.contextMenus.create(title
-        ? { id, parentId: 'inkflip', title, contexts: ['image'] }
-        : { id, parentId: 'inkflip', type: 'separator', contexts: ['image'] });
-    }
-  });
+  createMenus();
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const choice = { 'inkflip-flip': 'flip', 'inkflip-dim': 'dim', 'inkflip-none': 'none', 'inkflip-auto': null }[info.menuItemId];
-  if (choice === undefined || !info.srcUrl) return;
+/**
+ * Remember a choice for this site. Images are keyed by their URL, which Chrome hands over; for
+ * anything else the frame that was right-clicked says which element it was and what key it
+ * goes by.
+ */
+async function onMenuClick(info, tab) {
+  const [, menu, choice] = String(info.menuItemId).split(':');
+  if (!menu || !choice || choice === 'sep') return;
   let host = hostOf(tab && tab.url);
   if (host === null) host = hostOf(info.pageUrl);
   if (host === null) return;
-  const key = 'ovr:' + host;
-  const overrides = (await chrome.storage.local.get(key))[key] || {};
-  if (choice) overrides[info.srcUrl] = choice;
-  else delete overrides[info.srcUrl];
-  await chrome.storage.local.set({ [key]: overrides });
-});
+  let key = menu === 'image' ? info.srcUrl : null;
+  if (!key && tab && tab.id >= 0) {
+    key = await chrome.tabs.sendMessage(tab.id, { type: 'menu-target' }, { frameId: info.frameId || 0 })
+      .catch(() => null);
+  }
+  // A page opened before Inkflip was installed has no content script to ask.
+  if (!key && menu === 'video' && /^https?:/.test(info.srcUrl || '')) key = info.srcUrl;
+  if (!key) return;
+  const store = 'ovr:' + host;
+  const overrides = (await chrome.storage.local.get(store))[store] || {};
+  if (choice === 'auto') delete overrides[key];
+  else overrides[key] = choice;
+  await chrome.storage.local.set({ [store]: overrides });
+}
+
+chrome.contextMenus.onClicked.addListener((info, tab) => { onMenuClick(info, tab); });
+
+// For the end-to-end test, which can't open Chrome's native menu.
+self.inkflipTest = { menuClick: onMenuClick, underShown: () => underShown ?? null };
 
 // --------------------------------------------------------------- keyboard shortcut
 

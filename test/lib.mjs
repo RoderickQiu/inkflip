@@ -25,7 +25,8 @@ export async function plainUserAgent() {
 // loaded, fully opaque and unfiltered while the page behind it is dark. The check runs in a
 // ResizeObserver callback, which comes after every requestAnimationFrame callback and right
 // before paint, so it sees exactly what gets painted. Any such frame for an image that
-// Inkflip ended up flipping or dimming was a white flash.
+// Inkflip ended up flipping or dimming was a white flash. Canvases count once a fixture page
+// has marked them data-painted (nothing else can tell a painted canvas from a blank one).
 export function flashMonitor() {
   window.__white = {};
   const lum = (s) => {
@@ -49,6 +50,13 @@ export function flashMonitor() {
       const key = img.id || img.currentSrc;
       window.__white[key] = (window.__white[key] || 0) + 1;
     }
+    for (const cv of document.querySelectorAll('canvas[data-painted]')) {
+      const cs = getComputedStyle(cv);
+      if (cs.opacity === '0' || cs.filter !== 'none' || cs.visibility === 'hidden') continue;
+      const r = cv.getBoundingClientRect();
+      if (!r.width || r.bottom < 0 || r.top > innerHeight) continue;
+      window.__white[cv.id] = (window.__white[cv.id] || 0) + 1;
+    }
   };
   const probe = document.createElement('flash-probe');
   probe.style.cssText = 'position:fixed;left:0;top:0;height:1px;width:1px;pointer-events:none;visibility:hidden';
@@ -62,10 +70,10 @@ export function flashMonitor() {
   requestAnimationFrame(tick);
 }
 
-/** White frames shown by images that Inkflip ended up flipping, brightening or dimming. */
+/** White frames shown by images and canvases that Inkflip ended up flipping, brightening or dimming. */
 export const flashes = (page) => page.evaluate(() => {
   const out = {};
-  for (const img of document.images) {
+  for (const img of document.querySelectorAll('img, canvas')) {
     const v = img.getAttribute('data-inkflip');
     if (!img.hasAttribute('data-inkflip-l') || !['flip', 'logo', 'dim'].includes(v)) continue;
     const key = img.id || img.currentSrc;
@@ -99,7 +107,7 @@ export async function launch(extensions, { colorScheme = 'light' } = {}) {
   // An extension page to drive chrome.storage from (service workers can go to sleep).
   const ctl = await context.newPage();
   await ctl.goto(`chrome-extension://${id}/popup/popup.html`);
-  return { context, id, ctl };
+  return { context, id, ctl, sw };
 }
 
 export const settings = (ctl, patch) => ctl.evaluate(async (patch) => {

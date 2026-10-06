@@ -1,14 +1,17 @@
 /*
  * Inkflip content script.
  *
- * Finds <img> elements, gets a verdict for each one (from the user's right-click choice,
- * the shared cache, or by sampling its pixels), and tags it with data-inkflip="flip|logo|dim|none".
- * A single injected stylesheet turns those tags into CSS filters, but only while the image
+ * Finds <img> and <canvas> elements, gets a verdict for each one (from the user's right-click
+ * choice, the shared cache, or by sampling its pixels), and tags it with
+ * data-inkflip="flip|logo|dim|none". A <video> is only ever tagged by a right-click choice.
+ * A single injected stylesheet turns those tags into CSS filters, but only while the element
  * actually sits on a dark background, which is what data-inkflip-l (the backdrop's lightness)
  * records. Page colours, CSS background images and inline SVG are left to Dark Reader.
  *
  * No white flash: on dark pages a new image carries data-inkflip-wait (opacity 0) from the
  * moment it enters the DOM until its verdict is in, so it first appears already flipped.
+ * A canvas is held the same way while it is still blank, but for at most CANVAS_HOLD once it
+ * is on screen: a WebGL canvas reads back blank forever and must not stay hidden.
  */
 (() => {
   'use strict';
@@ -25,6 +28,9 @@
   const MAX_WAIT = 2500; // ms a loaded, on-screen image may stay hidden while it is checked
   const SMALL = 48; // px: avatars, swatches, icons. Too few pixels to judge reliably and too small
                     // to glare: never hidden, never flipped or dimmed, only rescued if dark ink
+  const CANVAS_HOLD = 500; // ms a blank canvas on screen may stay hidden, waiting to be painted
+  const RECHECK = [300, 1000, 2500, 6000]; // ms after a canvas verdict: charts animate in,
+                                           // PDF pages render in passes
 
   const HOST = topHost();
   const OVR_KEY = 'ovr:' + HOST;
@@ -32,16 +38,21 @@
   const isTop = window === window.top;
 
   let settings = { ...DEFAULTS };
-  let overrides = {}; // image URL -> 'flip' | 'dim' | 'none', set from the right-click menu
+  let overrides = {}; // image URL, canvas or video key -> 'flip' | 'dim' | 'none', from the right-click menu
   let ready = false; // settings have been read
   let knownDark = false; // this site was dark last time, so hold images from the first byte
   let hold = true; // hide unchecked images (true until settings say otherwise)
   let filterMode = false; // the whole page is inverted (Dark Reader's Filter mode or similar)
 
-  const state = new WeakMap(); // img -> { src, verdict, signals, source, pending, provisional, clock }
+  const state = new WeakMap(); // element -> { kind, verdict, signals, source, provisional, ... }
   const tracked = new Set();
-  const near = new WeakSet(); // images within the IntersectionObserver margin
-  const visible = new WeakSet(); // images actually on screen: checked first
+  const near = new WeakSet(); // elements within the IntersectionObserver margin
+  const visible = new WeakSet(); // elements actually on screen: checked first
+
+  const isImg = (el) => el instanceof HTMLImageElement;
+  const isCanvas = (el) => el instanceof HTMLCanvasElement;
+  const isVideo = (el) => el instanceof HTMLVideoElement;
+  const isMedia = (el) => isImg(el) || isCanvas(el) || isVideo(el);
 
   // ---------------------------------------------------------------- stylesheet
 
@@ -54,10 +65,10 @@
 
   function buildCss() {
     let css = '';
-    if (!ready || (isActive() && settings.hold)) css += `img[${WAIT}]{opacity:0 !important}\n`;
+    if (!ready || (isActive() && settings.hold)) css += `:is(img,canvas)[${WAIT}]{opacity:0 !important}\n`;
     if (!isActive()) return css;
     const hover = settings.peek === 'hover' ? ':not(:hover)' : '';
-    const on = (v) => `html:not([${PEEK}]) img[${ATTR}="${v}"]`;
+    const on = (v) => `html:not([${PEEK}]) :is(img,canvas,video)[${ATTR}="${v}"]`;
     if (settings.flip || settings.logo) {
       // Invert so white lands just below the backdrop's darkest channel, then blend with
       // `lighten`: the image's background takes the backdrop's exact colour (tinted panels
@@ -204,7 +215,7 @@
   }
 
   function wait(img) {
-    if (img.hasAttribute(WAIT)) return;
+    if (isVideo(img) || img.hasAttribute(WAIT)) return;
     img.setAttribute(WAIT, '');
     if (!watchdog) watchdog = setInterval(checkWaits, 250);
   }
@@ -219,7 +230,13 @@
       const st = state.get(img);
       if (!st || !img.isConnected) { img.removeAttribute(WAIT); continue; }
       waiting++;
-      if (near.has(img) && img.complete) {
+      if (st.kind === 'canvas') {
+        // Its own polling reveals it after CANVAS_HOLD; this is the backstop.
+        if (visible.has(img)) {
+          st.t0 = st.t0 || now;
+          if (now - st.t0 > CANVAS_HOLD + 1000) img.removeAttribute(WAIT);
+        }
+      } else if (near.has(img) && img.complete) {
         st.clock = st.clock || now;
         if (now - st.clock > MAX_WAIT) img.removeAttribute(WAIT);
       }
@@ -242,7 +259,7 @@
     st.inverted = ctx.inverted || st.ownInverted;
     st.provisional = !ctx.measured;
     st.stale = false;
-    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const [nw, nh] = natural(img);
     const tiny = (nw > 0 && (nw < 8 || nh < 8)) || (r.width > 0 && (r.width < 8 || r.height < 8));
     const small = r.width > 0 && r.width <= SMALL && r.height <= SMALL;
 
@@ -263,6 +280,13 @@
   function clearTags(img) {
     img.removeAttribute(ATTR);
     img.removeAttribute(ATTR_L);
+  }
+
+  /** Intrinsic size: an image's pixels, a canvas's bitmap, a video's frames. */
+  function natural(el) {
+    if (isCanvas(el)) return [el.width, el.height];
+    if (isVideo(el)) return [el.videoWidth, el.videoHeight];
+    return [el.naturalWidth, el.naturalHeight];
   }
 
   // ---------------------------------------------------------------- analysis
@@ -388,14 +412,228 @@
     }
   }
 
+  // ---------------------------------------------------------------- canvases
+  //
+  // A canvas has no load event and no URL: the page paints it whenever it likes, and may paint
+  // it again. So it is sampled when it comes near the screen, polled while it is still blank,
+  // and looked at a few more times after its verdict (charts animate in, PDF pages render in
+  // passes, a resize clears it). Once it has a verdict, two samples in a row must agree before
+  // it changes. A canvas holding a cross-origin picture can't be read, and WebGL reads back
+  // blank or a stray frame: both are left alone (a right-click choice still applies).
+
+  /** Verdict for a canvas's current pixels, or 'blank' (nothing painted) or 'tainted'. */
+  function sampleCanvas(cv) {
+    const w = cv.width, h = cv.height;
+    if (w < 8 || h < 8) return 'blank';
+    const [tw, th] = C.sampleSize(w, h);
+    try {
+      // Shrink it on the GPU first: reading a full-size canvas back into memory is slow.
+      const small = new OffscreenCanvas(tw, th);
+      const g = small.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      g.drawImage(cv, 0, 0, tw, th);
+      const px = C.pixels(small, tw, th, false);
+      const res = C.classify(px.data, px.w, px.h);
+      return res.signals.transp > 0.998 ? 'blank' : res;
+    } catch (e) {
+      return 'tainted'; // a cross-origin image was drawn into it
+    }
+  }
+
+  /**
+   * Whether a canvas keeps its pixels between frames, so that a sample means something.
+   * WebGL and WebGPU drop each frame once it is on screen: a sample reads blank, or whichever
+   * frame it happened to catch. Only asked once the canvas has shown content, so it already
+   * has a context and asking for another one creates nothing: it just returns null.
+   */
+  function steady(cv) {
+    try {
+      return !!(cv.getContext('2d') || cv.getContext('bitmaprenderer'));
+    } catch (e) {
+      return true; // stands in for an OffscreenCanvas, and shows its last committed frame
+    }
+  }
+
+  function later(cv, st, ms) {
+    clearTimeout(st.timer);
+    st.timer = setTimeout(canvasTick, ms, cv);
+  }
+
+  /** Start sampling a canvas; `fresh` starts its checks over (after a resize, say). */
+  function startCanvas(cv, fresh) {
+    const st = state.get(cv);
+    if (!st || st.source === 'you' || st.gl || !isActive()) return;
+    if (fresh) {
+      st.checks = 0;
+      st.t0 = 0;
+    }
+    if (!st.timer) later(cv, st, 0);
+  }
+
+  function settle(cv, st, verdict, signals, source) {
+    st.verdict = verdict;
+    st.signals = signals;
+    st.source = source;
+    apply(cv);
+  }
+
+  function recheck(cv, st) {
+    const ms = RECHECK[st.checks];
+    if (ms === undefined) return;
+    st.checks++;
+    later(cv, st, ms);
+  }
+
+  function canvasTick(cv) {
+    const st = state.get(cv);
+    if (!st) return;
+    st.timer = 0;
+    if (!cv.isConnected || !isActive() || st.source === 'you') return;
+    const mine = overrideFor(cv, st); // its parents' classes may have changed since it was found
+    if (mine) {
+      settle(cv, st, mine, null, 'you');
+      return;
+    }
+    const now = performance.now();
+    const res = sampleCanvas(cv);
+    st.sampled = now;
+    if (res === 'tainted') {
+      if (!st.verdict || st.source === 'blank') settle(cv, st, 'none', null, 'unreadable');
+      return;
+    }
+    if (res === 'blank') {
+      if (st.verdict && st.source !== 'blank') { recheck(cv, st); return; } // cleared for a redraw
+      if (!visible.has(cv)) { st.t0 = 0; return; } // polled again once it is on screen
+      st.t0 = st.t0 || now;
+      const age = now - st.t0;
+      if (age >= CANVAS_HOLD) cv.removeAttribute(WAIT);
+      if (age < (st.gaveUp ? 2000 : 15000)) {
+        later(cv, st, age < CANVAS_HOLD ? 16 : age < 3000 ? 200 : 1000);
+      } else {
+        st.gaveUp = true;
+        st.t0 = 0;
+        settle(cv, st, 'none', null, 'blank');
+      }
+      return;
+    }
+    if (st.gl === undefined) st.gl = !steady(cv);
+    if (st.gl) {
+      settle(cv, st, 'none', null, 'webgl');
+      cv.removeAttribute(WAIT);
+      return;
+    }
+    const firm = st.verdict && st.source === 'page';
+    if (firm && res.verdict !== st.verdict && st.candidate !== res.verdict) {
+      st.candidate = res.verdict; // maybe caught mid-redraw: look again before switching
+      later(cv, st, 150);
+      return;
+    }
+    st.candidate = null;
+    settle(cv, st, res.verdict, res.signals, 'page');
+    recheck(cv, st);
+  }
+
+  /** Setting a canvas's width or height clears it: watch it repaint. */
+  function canvasResized(cv) {
+    const st = state.get(cv);
+    if (!st || (cv.width === st.w && cv.height === st.h)) return;
+    st.w = cv.width;
+    st.h = cv.height;
+    if (near.has(cv)) startCanvas(cv, true);
+  }
+
+  // ------------------------------------------------------- right-click choices
+
+  /**
+   * What a right-click choice on a canvas is remembered by, for this site: its id, and the
+   * tags and class names of the parents it sits in. Every page of a PDF viewer shares one,
+   * as do the charts of one kind on a site. Class names with digits in them are left out,
+   * because they tend to be generated, and so is the canvas's own class list, which chart
+   * libraries change after they start.
+   */
+  function canvasKey(cv) {
+    const id = cv.id && !/\d/.test(cv.id) ? '#' + cv.id : '';
+    const parts = ['canvas' + id];
+    let n = cv.parentElement;
+    for (let i = 0; i < 3 && n && n !== document.body && n !== document.documentElement; i++, n = n.parentElement) {
+      const cls = [...n.classList].filter((c) => !/\d/.test(c) && c.length <= 40).sort().slice(0, 3);
+      parts.unshift(n.localName + cls.map((c) => '.' + c).join(''));
+    }
+    return 'canvas|' + parts.join('>');
+  }
+
+  /**
+   * What a right-click choice on a video is remembered by: its file, when it has a real
+   * address, or else this page and its place on it (streamed video plays from a blob: URL
+   * that changes on every visit).
+   */
+  function videoKey(v) {
+    const src = v.currentSrc || v.src || '';
+    if (cacheable(src)) return src;
+    const n = [...document.getElementsByTagName('video')].indexOf(v);
+    return `video|${location.origin}${location.pathname}${location.search}|${n}`;
+  }
+
+  function overrideFor(el, st) {
+    if (isImg(el)) return overrides[st.src] || (el.src && overrides[el.src]) || null;
+    return overrides[isCanvas(el) ? canvasKey(el) : st.key] || null;
+  }
+
   // --------------------------------------------------------------- discovery
 
-  function consider(img) {
-    if (!tracked.has(img)) {
-      tracked.add(img);
-      io.observe(img);
-      seen.observe(img);
+  function consider(el) {
+    if (!tracked.has(el)) {
+      tracked.add(el);
+      io.observe(el);
+      seen.observe(el);
     }
+    if (isImg(el)) return considerImage(el);
+    let st = state.get(el);
+    if (st) {
+      if (st.kind === 'video') refreshVideo(el, st);
+      return st;
+    }
+    st = isCanvas(el)
+      ? { kind: 'canvas', verdict: null, w: el.width, h: el.height, checks: 0, t0: 0, timer: 0 }
+      : { kind: 'video', verdict: null, key: videoKey(el) };
+    state.set(el, st);
+    const mine = overrideFor(el, st);
+    if (mine) {
+      st.verdict = mine;
+      st.source = 'you';
+      apply(el);
+    } else if (st.kind === 'canvas') {
+      if (hold) wait(el); // set inside the MutationObserver callback: before first paint
+      if (near.has(el)) startCanvas(el, true);
+    }
+    return st;
+  }
+
+  /** A video's source or the page address changed (YouTube reuses one element throughout). */
+  function refreshVideo(v, st) {
+    const key = videoKey(v);
+    if (key === st.key) return;
+    st.key = key;
+    const mine = overrides[key];
+    if (mine) {
+      st.verdict = mine;
+      st.source = 'you';
+      apply(v);
+    } else if (st.verdict) {
+      st.verdict = null;
+      st.source = null;
+      clearTags(v);
+      queueBadges();
+    }
+  }
+
+  /** Get a verdict under way, whatever kind of element it is. */
+  function check(el) {
+    if (isImg(el)) schedule(el);
+    else if (isCanvas(el)) startCanvas(el, false);
+  }
+
+  function considerImage(img) {
     const src = img.currentSrc || img.src || '';
     let st = state.get(img);
     if (st && st.src === src) return st;
@@ -405,9 +643,9 @@
       img.removeAttribute(WAIT);
       return null;
     }
-    st = { src, verdict: null };
+    st = { kind: 'img', src, verdict: null };
     state.set(img, st);
-    const mine = overrides[src] || (img.src && overrides[img.src]);
+    const mine = overrideFor(img, st);
     if (mine) {
       st.verdict = mine;
       st.source = 'you';
@@ -422,26 +660,32 @@
 
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
-      const img = e.target;
-      if (!e.isIntersecting) { near.delete(img); continue; }
-      near.add(img);
-      const st = consider(img);
+      const el = e.target;
+      if (!e.isIntersecting) { near.delete(el); continue; }
+      near.add(el);
+      const st = consider(el);
       if (!st) continue;
       const b = e.boundingClientRect;
-      if (b.width > 0 && b.width <= SMALL && b.height <= SMALL) img.removeAttribute(WAIT); // small: show at once
-      if (!st.verdict) schedule(img);
-      else if (st.stale) apply(img);
+      if (b.width > 0 && b.width <= SMALL && b.height <= SMALL) el.removeAttribute(WAIT); // small: show at once
+      if (!st.verdict) check(el);
+      else if (st.stale) apply(el);
     }
   }, { rootMargin: '800px', scrollMargin: '800px' });
 
-  // Off-screen images were tagged from their ancestors' background; measure the real
-  // backdrop once they are actually visible.
+  // Off-screen elements were tagged from their ancestors' background; measure the real
+  // backdrop once they are actually visible. A canvas back on screen is polled again if it
+  // was blank, or looked at once more if it may have been repainted since.
   const seen = new IntersectionObserver((entries) => {
     for (const e of entries) {
-      if (e.isIntersecting) visible.add(e.target);
-      else visible.delete(e.target);
-      const st = e.isIntersecting && state.get(e.target);
-      if (st && st.verdict && st.provisional) apply(e.target);
+      const el = e.target;
+      if (e.isIntersecting) visible.add(el);
+      else visible.delete(el);
+      const st = e.isIntersecting && state.get(el);
+      if (!st) continue;
+      if (st.verdict && st.provisional) apply(el);
+      if (st.kind !== 'canvas') continue;
+      if (!st.verdict || st.source === 'blank') startCanvas(el, false);
+      else if (performance.now() - (st.sampled || 0) > 5000) startCanvas(el, true);
     }
   });
 
@@ -465,14 +709,17 @@
   }, true);
 
   function scan(rootNode) {
-    if (rootNode.tagName === 'IMG') consider(rootNode);
-    else if (rootNode.querySelectorAll) rootNode.querySelectorAll('img').forEach(consider);
+    if (isMedia(rootNode)) consider(rootNode);
+    else if (rootNode.querySelectorAll) rootNode.querySelectorAll('img,canvas,video').forEach(consider);
   }
 
   const domObserver = new MutationObserver((muts) => {
     for (const m of muts) {
       if (m.type === 'attributes') {
-        if (m.target instanceof HTMLImageElement) consider(m.target);
+        const t = m.target;
+        if (isImg(t)) consider(t);
+        else if (isCanvas(t)) canvasResized(t);
+        else if (isVideo(t) && m.attributeName === 'src' && state.has(t)) consider(t);
         continue;
       }
       if (m.target.nodeName === 'STYLE' && m.target !== style) themeChanged(); // stylesheet text edited
@@ -488,7 +735,7 @@
     }
   });
   domObserver.observe(document, {
-    childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'],
+    childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'width', 'height'],
   });
 
   // Theme switches: Dark Reader toggling, the site's own dark-mode class, the OS setting.
@@ -500,9 +747,15 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) themeChanged(); });
 
   // Backstop for theme changes no observer sees (stylesheets edited through the CSSOM).
+  // Also notices single-page navigation, which gives a reused <video> a new identity.
   let lastDark = null;
+  let lastHref = location.href;
   setInterval(() => {
     if (document.hidden || !ready || !document.body) return;
+    if (location.href !== lastHref) {
+      lastHref = location.href;
+      for (const el of tracked) if (isVideo(el) && state.has(el)) consider(el);
+    }
     const dark = pageLightness() <= DARK_PAGE;
     if (lastDark !== null && dark !== lastDark) themeChanged();
     lastDark = dark;
@@ -521,12 +774,12 @@
     if (wasActive !== isActive()) refreshStyle();
     rememberDarkness();
     updateHold();
-    for (const img of tracked) {
-      if (!img.isConnected) { tracked.delete(img); io.unobserve(img); seen.unobserve(img); continue; }
-      const st = state.get(img);
+    for (const el of tracked) {
+      if (!el.isConnected) { tracked.delete(el); io.unobserve(el); seen.unobserve(el); continue; }
+      const st = state.get(el);
       if (!st) continue;
-      if (!st.verdict) { if (near.has(img)) schedule(img); continue; }
-      if (near.has(img)) apply(img);
+      if (!st.verdict) { if (near.has(el)) check(el); continue; }
+      if (near.has(el)) apply(el);
       else st.stale = true;
     }
     queueBadges();
@@ -558,6 +811,78 @@
   window.addEventListener('keyup', (e) => { if (e.key === 'Alt') setPeek(false); }, true);
   window.addEventListener('blur', () => setPeek(false));
   document.addEventListener('visibilitychange', () => setPeek(false));
+
+  // -------------------------------------------------------- right-click menu
+  //
+  // Chrome itself offers Inkflip's menu when you right-click an image or a video. A canvas,
+  // or an image or video under a transparent layer (pdf.js's text layer, YouTube's controls),
+  // gets no menu of its own, so this script tells the service worker what is under the
+  // pointer and it shows a second menu while there is one. When a choice is made, the service
+  // worker asks this frame what was right-clicked.
+
+  let menuTarget = null; // the image, canvas or video under the last right-click
+  let reported; // what this document last told the service worker; undefined: tell it again
+  let px = -1, py = -1, pointerTimer = 0;
+
+  /** The image, canvas or video visible at a point, looking through transparent layers. */
+  function mediaAt(x, y) {
+    const stack = document.elementsFromPoint(x, y);
+    for (let i = 0; i < stack.length; i++) {
+      const el = stack[i];
+      if (isMedia(el)) return { el, direct: i === 0 };
+      if (el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement ||
+          el instanceof HTMLEmbedElement || el instanceof HTMLObjectElement) return { frame: true };
+      const c = parseColor(getComputedStyle(el).backgroundColor);
+      if (c && c.a >= 0.5) break; // an opaque layer hides whatever is below it
+    }
+    return {};
+  }
+
+  function report(kind) {
+    if (kind === reported) return;
+    reported = kind;
+    send({ type: 'menu', kind, t: Date.now() });
+  }
+
+  function reportAt(x, y) {
+    const hit = mediaAt(x, y);
+    if (hit.frame) return; // the frame's own copy of this script reports
+    // A directly hit image or video already has Chrome's own menu.
+    report(!hit.el || (hit.direct && !isCanvas(hit.el)) ? null : isVideo(hit.el) ? 'video' : 'image');
+  }
+
+  function pointerMoved() {
+    if (pointerTimer || px < 0) return;
+    reportAt(px, py);
+    pointerTimer = setTimeout(() => { pointerTimer = 0; reportAt(px, py); }, 100);
+  }
+
+  addEventListener('pointermove', (e) => {
+    px = e.clientX;
+    py = e.clientY;
+    pointerMoved();
+  }, { capture: true, passive: true });
+  // Entering this document from outside it (or from a parent frame): report afresh.
+  addEventListener('pointerover', (e) => { if (!e.relatedTarget) reported = undefined; }, { capture: true, passive: true });
+  document.addEventListener('mouseout', (e) => { if (!e.relatedTarget) report(null); }, true);
+  addEventListener('focus', () => { reported = undefined; });
+  document.addEventListener('visibilitychange', () => { reported = undefined; });
+  for (const type of ['mousedown', 'contextmenu']) {
+    addEventListener(type, (e) => {
+      if (type === 'mousedown' && e.button !== 2) return;
+      menuTarget = mediaAt(e.clientX, e.clientY).el || null;
+      reportAt(e.clientX, e.clientY);
+    }, true);
+  }
+
+  /** The key a right-click choice on the last right-clicked element is stored under. */
+  function menuKey() {
+    const el = menuTarget;
+    if (!el || !el.isConnected) return null;
+    const st = consider(el);
+    if (!st) return null;
+    return st.kind === 'img' ? st.src : st.kind === 'canvas' ? canvasKey(el) : st.key;
+  }
 
   // ------------------------------------------------------------------ badges
 
@@ -605,7 +930,7 @@
     }
     badgeLayer.list.innerHTML = html;
   }
-  addEventListener('scroll', queueBadges, { capture: true, passive: true });
+  addEventListener('scroll', () => { queueBadges(); pointerMoved(); }, { capture: true, passive: true });
   addEventListener('resize', queueBadges, { passive: true });
 
   // ---------------------------------------------------------------- settings
@@ -632,23 +957,29 @@
   }
 
   function applyOverrides() {
-    for (const img of tracked) {
-      const st = state.get(img);
+    for (const el of tracked) {
+      const st = state.get(el);
       if (!st) continue;
-      const mine = overrides[st.src];
+      const mine = overrideFor(el, st);
       if (mine) {
         st.verdict = mine;
         st.source = 'you';
       } else if (st.source === 'you') {
         st.verdict = null;
         st.source = null;
-        st.pending = false;
-        clearTags(img);
-        lookup(img, st);
-        schedule(img);
+        clearTags(el);
+        if (st.kind === 'img') {
+          st.pending = false;
+          lookup(el, st);
+          schedule(el);
+        } else if (st.kind === 'canvas') {
+          if (st.gl) settle(el, st, 'none', null, 'webgl');
+          else startCanvas(el, true);
+        }
+        queueBadges();
         continue;
       }
-      if (st.verdict) apply(img);
+      if (st.verdict) apply(el);
     }
   }
 
@@ -665,7 +996,9 @@
   });
 
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
-    if (msg && msg.type === 'stats' && isTop) reply(stats());
+    if (!msg) return;
+    if (msg.type === 'stats' && isTop) reply(stats());
+    else if (msg.type === 'menu-target') reply(menuKey());
   });
 
   function topHost() {

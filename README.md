@@ -83,6 +83,10 @@ Inkflip samples each picture and makes one of four calls:
 | **Dim** | Photos on white, colourful infographics | Toned down a little. Never inverted, because a flipped photo looks like a negative |
 | **Leave** | Ordinary photos, images that are already dark, anything Dark Reader or the site already inverted | Nothing |
 
+Canvases get the same four calls, so charts and PDF pages that a page draws with script are
+fixed too (pdf.js, which many sites embed to show PDFs, draws every page on a white canvas).
+Videos are only ever changed when you ask, from the right-click menu.
+
 ## Why you can leave it on
 
 - **It doesn't flip photos.** It was field-tested on 73 real sites (LeetCode, Wikipedia, arXiv,
@@ -91,6 +95,7 @@ Inkflip samples each picture and makes one of four calls:
   nothing.
 - **No white flash.** On a dark page, a new image stays hidden from the moment it appears until
   it has been checked, then shows up already dark. Verdicts are cached, so revisits are instant.
+  A new canvas stays hidden while it is still blank, so it too shows up already dark.
 - **It gets out of the way.** Light pages, sites you switch off, and images that are already
   inverted are left alone. Hold <kbd>Option</kbd> (<kbd>Alt</kbd> on Windows) to see any original.
 - **Nothing leaves your browser.** No account, no server, no analytics.
@@ -110,8 +115,12 @@ its default **Dynamic** mode.
 
 - **The popup** shows what Inkflip did on the current page, with switches for each treatment, the
   current site, and everything.
-- **Correct a call:** right-click an image › **Inkflip** › Flip / Dim / Show as is / Let Inkflip
-  decide. Your choice is remembered for that site.
+- **Correct a call:** right-click an image, canvas or video › **Inkflip** › Flip / Dim / Show as
+  is / Let Inkflip decide. This works through transparent layers too, such as the text layer
+  pdf.js puts over a page or YouTube's player controls. Your choice is remembered for that site.
+  An image or a video file is remembered by its address. A streamed video is remembered for
+  that page. A canvas is remembered by where it sits, so one choice covers every page of a PDF
+  viewer.
 - **Toggle a site:** <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> (change it at `chrome://extensions/shortcuts`).
 - **Verdict badges:** switch them on in the popup to label every image with what Inkflip decided
   and why.
@@ -132,17 +141,30 @@ hit-test stack, because the visible panel isn't always a parent element), invert
 just under that colour, and blends it with `mix-blend-mode: lighten`. The paper ends up exactly
 the panel's colour, tinted panels included.
 
+A canvas has no load event, and the page can paint it at any time. Inkflip samples it as it
+comes near the screen, keeps looking while it is still blank, and looks again a few times
+over the next six seconds, because charts animate in and PDF pages render in passes. A
+resize clears a canvas, so that starts the checks over, and the flip stays on while it
+repaints. Once a canvas has a verdict, two samples in a row must agree before it changes.
+
 | Test suite | What it covers | Result |
 |---|---|---|
 | `npm test` | Classifier on synthetic diagrams, photos, logos, transparent graphs, white product renders and heatmaps | 15 / 15 |
 | `npm run test:real` | Classifier in Chromium on 19 labelled images | 19 / 19 |
 | `npm run eval` | 393 hand-labelled images from 48 real pages | 389 / 393, 0 photos flipped |
-| `npm run test:e2e -- --live` | The real extension, headless: cross-origin and SVG images, theme switches, peek, per-site off, right-click choices, cache, Dark Reader alongside, live LeetCode, and a frame-by-frame check that no image shows white first | 38 / 38 |
+| `npm run test:e2e -- --live` | The real extension, headless: cross-origin and SVG images, canvases painted early, late, tainted and by WebGL, theme switches, peek, per-site off, right-click choices on images, canvases and video (through transparent layers too), cache, Dark Reader alongside, live LeetCode, and a frame-by-frame check that no image or canvas shows white first | 73 / 73 |
 
 ## Limitations
 
-- Only `<img>` elements. CSS background images and inline SVG are Dark Reader's job; `<canvas>`
-  charts and video aren't handled yet.
+- Only `<img>` and `<canvas>` elements are judged. CSS background images and inline SVG are
+  Dark Reader's job.
+- Video is never changed on its own: inverting people and scenery makes them look like a
+  negative. Right-click › Flip works for screen recordings and slides.
+- Two kinds of canvas can't be read reliably, so they're left alone unless you right-click
+  them. WebGL canvases (maps, 3D views) drop each frame once it's on screen. A canvas that has
+  had a picture from another site drawn into it is locked by the browser.
+- A canvas first painted more than half a second after it appears shows white briefly before
+  it flips.
 - Colourful transparent diagrams with thin black text are left alone, because a filter that
   rescues their text would also recolour colourful logos. Right-click › Flip works for these.
 - Images of 48 px or less (avatars, icons) are never flipped or dimmed: too few pixels to judge.
@@ -184,8 +206,8 @@ npm run assets                   # README hero; store images into dist/store
 ```
 extension/            the extension (load this folder unpacked)
   classifier.js       pixel signals and verdicts, shared by every part
-  content.js          finds, tags and styles images; no-flash hold; badges
-  background.js       reads cross-origin images, verdict cache, right-click menu, shortcut
+  content.js          finds, tags and styles images and canvases; no-flash hold; badges
+  background.js       reads cross-origin images, verdict cache, right-click menus, shortcut
   popup/              the toolbar popup
 site/                 the website (static, deployed on Vercel)
 research/             field-test pages, hand-labelled images, harvest and eval tools

@@ -2,13 +2,14 @@
 
 *Last updated: 6 October 2026*
 
-Inkflip is a browser extension that adjusts how images look on dark web pages. It does not
-collect, sell or share personal data.
+Inkflip is a browser extension that adjusts how images, canvases and videos look on dark web
+pages. It does not collect, sell or share personal data.
 
 ## What it processes
 
-- **Images on the pages you visit.** Inkflip reads the pixels of images on the page to decide
-  how to display them. This happens on your device.
+- **Images and canvases on the pages you visit.** Inkflip reads the pixels of images and
+  canvases (the drawing areas sites use for charts and PDF pages) to decide how to display
+  them. This happens on your device. Video pixels are never read.
 - **Cross-origin images.** When a page shows an image from another site, Inkflip cannot read
   its pixels directly, so it downloads the same image again from the same address. That request
   goes only to the server the page already loads the image from, and carries the page's
@@ -21,8 +22,10 @@ collect, sell or share personal data.
   the extension's IndexedDB and capped at 20,000 entries. This lets images display correctly
   the moment they appear on a revisit.
 - **Settings:** your switches, per-site choices and right-click corrections, kept in
-  `chrome.storage`. If you use Chrome Sync, Chrome syncs the settings between your browsers.
-  Right-click corrections and the cache stay local.
+  `chrome.storage`. A correction is stored under the image or video's address. For a canvas it
+  is stored under a short description of where the canvas sits on the page. For a streamed
+  video it is stored under the page's address. If you use Chrome Sync, Chrome syncs the
+  settings between your browsers. Right-click corrections and the cache stay local.
 - **Whether a site was dark** on your last visit, so images can be hidden until checked from the
   first moment.
 
