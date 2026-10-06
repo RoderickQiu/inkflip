@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://inkflip.r-q.name">Website</a> ·
-  <a href="https://inkflip.r-q.name/download/inkflip-0.3.0.zip">Download for Chrome</a> ·
+  <a href="https://inkflip.r-q.name/download/inkflip.zip">Download for Chrome</a> ·
   <a href="https://inkflip.r-q.name/privacy">Privacy</a>
 </p>
 
@@ -81,7 +81,7 @@ the 393 right and flips none of the photos.
 
 The Chrome Web Store listing is pending. Until it's live:
 
-1. Download [inkflip-0.3.0.zip](https://inkflip.r-q.name/download/inkflip-0.3.0.zip) and unzip it.
+1. Download [inkflip.zip](https://inkflip.r-q.name/download/inkflip.zip) and unzip it.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and choose the unzipped folder.
 
@@ -163,7 +163,7 @@ npm run harvest                  # download the field images for labelling
 npm run eval                     # score the classifier against research/field-labels.tsv
 
 npm run showcase                 # recapture the before/after pairs in site/img
-npm run site                     # package, copy the zip into site/, render site/og.png
+npm run site                     # package into site/download/inkflip.zip, render site/og.png
 npm run assets                   # README hero and store images in dist/store
 ```
 

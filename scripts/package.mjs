@@ -1,5 +1,7 @@
 // Zips the extension folder into dist/inkflip-<version>.zip, ready for the Chrome Web Store.
-import { readFile, mkdir, rm } from 'node:fs/promises';
+// With --site it also copies the zip to site/download/inkflip.zip. The website never names a
+// version, so its download link stays the same across releases.
+import { readFile, mkdir, rm, copyFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -16,3 +18,10 @@ await mkdir(path.dirname(out), { recursive: true });
 await rm(out, { force: true });
 execFileSync('zip', ['-r', '-X', '-q', out, '.', '-x', '*.DS_Store'], { cwd: path.join(root, 'extension') });
 console.log(path.relative(root, out));
+
+if (process.argv.includes('--site')) {
+  const site = path.join(root, 'site/download/inkflip.zip');
+  await mkdir(path.dirname(site), { recursive: true });
+  await copyFile(out, site);
+  console.log(path.relative(root, site));
+}

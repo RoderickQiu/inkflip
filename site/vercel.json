@@ -1,6 +1,11 @@
 {
+  "installCommand": "cd .. && npm ci",
+  "buildCommand": "cd .. && node scripts/package.mjs --site",
   "cleanUrls": true,
   "trailingSlash": false,
+  "redirects": [
+    { "source": "/download/inkflip-:version.zip", "destination": "/download/inkflip.zip", "permanent": false }
+  ],
   "headers": [
     {
       "source": "/download/(.*)",

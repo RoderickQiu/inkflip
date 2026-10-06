@@ -1,19 +1,14 @@
-// Prepares site/ for deployment: copies the packaged extension into site/download/ and
-// renders the social preview image (site/og.png, 1200×630) from the real before/after pair.
+// Renders the social preview image (site/og.png, 1200×630) from the real before/after pair.
 //
-//   npm run package && node scripts/build-site.mjs
+//   npm run site      (packages the zip into site/download/inkflip.zip first)
 //
-// Deploys happen on push: the Vercel project has Root Directory `site` and builds the zip
-// itself. For a manual deploy run `vercel deploy --prod` from the repo root, never from site/.
+// Deploys happen on push: the Vercel project has Root Directory `site`, and site/vercel.json
+// holds its install and build commands, which package the zip. For a manual deploy run
+// `vercel deploy --prod` from the repo root, never from site/.
 import { chromium } from 'playwright';
-import { readFile, copyFile, mkdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { root } from '../test/lib.mjs';
-
-const { version } = JSON.parse(await readFile(path.join(root, 'extension/manifest.json'), 'utf8'));
-await mkdir(path.join(root, 'site/download'), { recursive: true });
-await copyFile(path.join(root, `dist/inkflip-${version}.zip`), path.join(root, `site/download/inkflip-${version}.zip`));
-console.log(`site/download/inkflip-${version}.zip`);
 
 const data = async (rel, type) => `data:${type};base64,` + (await readFile(path.join(root, rel))).toString('base64');
 const icon = await data('site/img/icon.svg', 'image/svg+xml');
