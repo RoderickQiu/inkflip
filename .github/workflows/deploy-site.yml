@@ -1,0 +1,42 @@
+name: Deploy site
+
+# Every push to main deploys the site/ folder (and only that folder) to Vercel production.
+# Deploying from the repo root breaks every URL, so never run `vercel deploy` from there.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'extension/**'
+      - 'package.json'
+      - 'scripts/package.mjs'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: team_Dr7RcU6OptGgUcOn59YiXceI
+  VERCEL_PROJECT_ID: prj_sJv4Ok7qYYSFI6oNSClQqtGPnePC
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Package the extension and put the zip under site/download
+        run: |
+          npm run package
+          mkdir -p site/download
+          cp dist/inkflip-*.zip site/download/
+      - name: Deploy site/ to Vercel production
+        run: npx --yes vercel@latest deploy --prod --yes --cwd site --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
