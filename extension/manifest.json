@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Inkflip: Dark Mode for Images",
   "short_name": "Inkflip",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turns white-background diagrams, charts and logos dark so they match dark mode. Built to run alongside Dark Reader.",
   "homepage_url": "https://inkflip.r-q.name",
   "icons": {

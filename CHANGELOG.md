@@ -1,17 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (6 October 2026)
 
-- **Canvases are fixed too.** Charts and PDF pages that sites draw with script on a white
-  `<canvas>` (pdf.js viewers, for one) are flipped, brightened, dimmed or left alone by the
-  same rules as images. A canvas is sampled as it comes near the screen, polled while still
-  blank, and checked again as it redraws. On dark pages a new canvas stays hidden while it is
-  blank, so it shows up already dark. WebGL canvases and canvases holding a picture from
-  another site can't be read reliably and are left alone.
-- **Right-click works on canvases and videos.** The Inkflip menu now appears for canvases,
-  for videos, and for images and videos hidden under a transparent layer (pdf.js's text
-  layer, YouTube's player controls). Flip a screen recording or a slide video from there.
-  Videos are never changed on their own: a flipped video of people looks like a negative.
+- Canvases get the same verdicts as images. This covers charts and PDF pages that sites draw
+  with script, such as pdf.js viewers. A canvas is checked as it comes near the screen and
+  again while it redraws. On dark pages a blank canvas stays hidden for up to half a second, so
+  it shows up already dark. WebGL canvases and canvases holding a picture from another site
+  can't be read and are left alone.
+- The right-click menu works on canvases and videos, and on images and videos under a
+  transparent layer, such as pdf.js's text layer or YouTube's player controls. Videos are only
+  ever changed from this menu.
+- On a dark site, a light panel that holds only pictures and no text is dimmed together with
+  its pictures, so screenshots keep their real colours instead of glaring.
+- On a site that is dark without Dark Reader, an image on a light panel now shows at once
+  instead of after 2.5 seconds.
+- The popup links to the Inkflip website and to the author's site.
 
 ## 0.2.0 (6 October 2026)
 
