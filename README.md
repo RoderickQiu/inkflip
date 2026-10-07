@@ -72,6 +72,13 @@ choose an option from the right-click menu.
 On a dark site, a light panel that holds only pictures and no text is dimmed together with
 its pictures, so a product screenshot keeps its real colours.
 
+Charts and diagrams drawn as inline SVG are drawn into an image and judged the same way. One
+on its own white paper is flipped whole. Dark Reader recolours inline SVG too, but it treats
+fills like text and keeps them light, so Plotly's plot area and distill.pub's boxes stay light
+on a dark page. Inkflip recolours such a chart shape by shape: light shapes turn dark and dark
+text and lines turn light, each keeping its hue. On a site that is dark by itself, only the
+large light panels in a chart are darkened.
+
 Embedded pages (iframes) are flipped when they are light and the page around them is dark.
 Dark Reader darkens them itself wherever it darkens the page, but on a site that is dark by
 itself, such as react.dev, it switches off and the live code previews stay white. Inkflip
@@ -130,8 +137,10 @@ again over the next few seconds while charts animate and PDF pages render.
 
 ## Limitations
 
-- Only `<img>` and `<canvas>` elements and light frames (`<iframe>`, `<object>`) are handled. CSS background images
-  and inline SVG are left to Dark Reader.
+- Only `<img>` and `<canvas>` elements, light frames (`<iframe>`, `<object>`) and inline SVG
+  charts are handled. CSS background images are left to Dark Reader.
+- Inline SVG charts with more than 4,000 elements or pictures inside them aren't judged as a
+  whole, and shapes filled with gradients or patterns keep their colours.
 - Inside a flipped frame, photos come out with a little less contrast, and CSS background
   pictures are flipped along with the frame.
 - A frame that is transparent and shows the page through it is left alone, even if its text is

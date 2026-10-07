@@ -20,6 +20,14 @@
   classifier now also looks at the image's outline. A white logo meets the page in thin white
   strokes, and a diagram meets it in dark lines. A light window screenshot is outlined in white
   too, but it is one solid block, so it still flips.
+- Charts and diagrams drawn as inline SVG are handled. Each large one is drawn into an image
+  in the colours it shows and judged like a picture; one on its own white paper is flipped
+  whole. On a page Dark Reader darkens, it keeps SVG fills light (it treats them like text),
+  which left Plotly's plot areas and distill.pub's boxes light: Inkflip now recolours such a
+  chart shape by shape, light shapes dark and dark text, lines and small marks light, shapes
+  drawn by `<use>` from another SVG's `<defs>` included. On a site that is dark by itself it
+  only darkens a chart's large light panels.
+- Inkflip's stylesheet is marked as a user style, so Dark Reader leaves its colours alone.
 - Light cards drawn in grey on a transparent background, such as the figure previews on
   distill.pub, are flipped. They have no black ink, so they used to pass for white logos made
   for dark pages; the classifier now also counts grey lines and labels, which a white logo

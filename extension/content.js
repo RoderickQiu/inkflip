@@ -31,6 +31,8 @@
   const PEEK = 'data-inkflip-peek';
   const CARD = 'data-inkflip-card';
   const FLIPPED = 'data-inkflip-flipped'; // on this frame's <html>: the page around flips it
+  const FILL = 'data-inkflip-fill'; // a shape in a chart, given the other lightness (index into swapTable)
+  const STROKE = 'data-inkflip-stroke'; // likewise its outline
   const MSG = '__inkflip'; // tags the messages between a page and its frames
   const DARK_PAGE = 0.40; // a backdrop at or below this lightness counts as dark
   const MAX_WAIT = 2500; // ms a loaded, on-screen image may stay hidden while it is checked
@@ -54,6 +56,7 @@
   let hold = true; // hide unchecked images (true until settings say otherwise)
   let filterMode = false; // the whole page is inverted (Dark Reader's Filter mode or similar)
   let flipped = false; // this is a frame, and the page around it flips it (see "frames")
+  let peeking = false; // the originals are shown (Alt held)
 
   const state = new WeakMap(); // element -> { kind, verdict, signals, source, provisional, ... }
   const tracked = new Set();
@@ -63,7 +66,8 @@
   const isImg = (el) => el instanceof HTMLImageElement;
   const isCanvas = (el) => el instanceof HTMLCanvasElement;
   const isVideo = (el) => el instanceof HTMLVideoElement;
-  const isMedia = (el) => isImg(el) || isCanvas(el) || isVideo(el);
+  const isChart = (el) => el instanceof SVGSVGElement && !el.ownerSVGElement; // an inline <svg>, outermost
+  const isMedia = (el) => isImg(el) || isCanvas(el) || isVideo(el) || isChart(el);
   const FRAMES = 'iframe,object,embed'; // elements that hold a document of their own
   const isFrame = (el) => el instanceof HTMLIFrameElement || el instanceof HTMLObjectElement || el instanceof HTMLEmbedElement;
 
@@ -71,6 +75,9 @@
 
   const style = document.createElement('style');
   style.id = 'inkflip-style';
+  // Dark Reader rewrites the colours in every stylesheet on the page, and would turn the dark
+  // fills below light again. It leaves user styles alone, which carry this class (Stylus's).
+  style.className = 'stylus';
 
   function isActive() {
     return ready && settings.enabled && !filterMode && !settings.disabledHosts.includes(HOST);
@@ -78,7 +85,7 @@
 
   function buildCss() {
     let css = '';
-    if (!ready || (isActive() && settings.hold)) css += `:is(img,canvas,${FRAMES})[${WAIT}]{opacity:0 !important}\n`;
+    if (!ready || (isActive() && settings.hold)) css += `:is(img,canvas,svg,${FRAMES})[${WAIT}]{opacity:0 !important}\n`;
     if (!isActive()) return css;
     const hover = settings.peek === 'hover' ? ':not(:hover)' : '';
     const on = (v, tags) => `html:not([${PEEK}]) ${tags ? `:is(${tags})` : ''}[${ATTR}="${v}"]`;
@@ -107,6 +114,16 @@
       if (settings.logo) sel.push(`${on('logo', 'img,canvas,video')}[${ATTR_L}]${hover}`);
       css += `${sel.join(',')}{background-color:transparent !important}\n`;
       if (settings.flip) css += `${on('flip', FRAMES)}[${ATTR_L}]${hover},${on('logo', FRAMES)}[${ATTR_L}]${hover}{box-shadow:none !important}\n`;
+    }
+    if (settings.flip) {
+      // No html ancestor in these selectors: shapes drawn by <use> are copies in a shadow tree
+      // that has none. Peek leaves these rules out instead (setPeek rebuilds the stylesheet).
+      if (!peeking) {
+        swapTable.forEach((c, k) => {
+          // The repeated attribute outranks Dark Reader's own rule for inline fills.
+          css += `[${FILL}="${k}"][${FILL}]${hover}{fill:${c} !important}\n[${STROKE}="${k}"][${STROKE}]${hover}{stroke:${c} !important}\n`;
+        });
+      }
     }
     if (settings.dim) {
       css += `${on('dim')}[${ATTR_L}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
@@ -357,7 +374,7 @@
       const st = state.get(img);
       if (!st || !img.isConnected) { img.removeAttribute(WAIT); continue; }
       waiting++;
-      if (st.kind === 'canvas') {
+      if (st.kind === 'canvas' || st.kind === 'svg') {
         // Its own polling reveals it after CANVAS_HOLD; this is the backstop.
         if (visible.has(img)) {
           st.t0 = st.t0 || now;
@@ -403,6 +420,10 @@
     // Reveal now, unless the page is about to turn dark (Dark Reader still loading) and this
     // image would then need flipping: it stays hidden until then, or until the watchdog. A page
     // that is dark on its own, with no Dark Reader, won't change: its light panels stay light.
+    if (st.kind === 'svg') {
+      const ok = !on && st.dark && !st.inverted && st.source !== 'you' && settings.flip;
+      recolor(img, ok ? (st.full ? 'full' : 'panels') : null);
+    }
     // In a frame that the page around it flips, every verdict is final.
     const native = !st.dark && detectDarkReader() === null && pageLightness() <= DARK_PAGE;
     if (on || card || native || flipped || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny || small) img.removeAttribute(WAIT);
@@ -414,10 +435,11 @@
     img.removeAttribute(ATTR_L);
   }
 
-  /** Intrinsic size: an image's pixels, a canvas's bitmap, a video's frames. */
+  /** Intrinsic size: an image's pixels, a canvas's bitmap, a video's frames, an SVG's box. */
   function natural(el) {
     if (isCanvas(el)) return [el.width, el.height];
     if (isVideo(el)) return [el.videoWidth, el.videoHeight];
+    if (isChart(el)) { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }
     return [el.naturalWidth, el.naturalHeight];
   }
 
@@ -674,6 +696,238 @@
     if (near.has(cv)) startCanvas(cv, true);
   }
 
+  // -------------------------------------------------------------- inline SVG
+  //
+  // Charts and diagrams drawn as inline <svg> (Plotly, D3, distill.pub's figures) aren't
+  // pictures to Dark Reader: it recolours their fills and strokes where it can, and a chart
+  // whose colours are set by script stays light. Each large one is drawn into an image in the
+  // colours it shows (its computed styles copied onto a clone) and judged like a picture, as
+  // it comes near the screen and a few times after, while it animates in. A light one is
+  // flipped as a whole; otherwise its large light shapes get dark fills (below). On a site that
+  // is dark by itself an inline SVG is part of its design, so only one painted on its own
+  // light background, a chart with a white plot area, is flipped there.
+
+  const SVG_MIN_W = 100, SVG_MIN_H = 60; // smaller ones are icons and wordmarks
+  const SVG_MAX_NODES = 4000; // a scatter plot with more points is left alone
+  const SVG_PROPS = ['fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-opacity',
+    'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'display', 'visibility', 'color',
+    'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'dominant-baseline',
+    'stop-color', 'stop-opacity', 'paint-order'];
+  const svgSize = new ResizeObserver((entries) => {
+    for (const e of entries) {
+      const st = state.get(e.target);
+      if (!st || st.kind !== 'svg') continue;
+      const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
+      const first = st.w === undefined;
+      if (w === st.w && h === st.h) continue;
+      st.w = w;
+      st.h = h;
+      if (!first && st.verdict && st.source !== 'you') svgChanged(e.target);
+    }
+  });
+
+  /** The chart drawn into an image, as a data: URL; null if it can't be (too big, pictures in it). */
+  function svgPicture(svg, w, h) {
+    const src = svg.getElementsByTagName('*');
+    if (src.length > SVG_MAX_NODES || svg.querySelector('image,foreignObject')) return null;
+    const clone = svg.cloneNode(true);
+    const dst = clone.getElementsByTagName('*');
+    const copy = (from, to) => {
+      const cs = getComputedStyle(from);
+      let text = '';
+      for (const p of SVG_PROPS) text += `${p}:${cs.getPropertyValue(p)};`;
+      to.setAttribute('style', text);
+    };
+    copy(svg, clone);
+    clone.style.opacity = 1; // it may be held hidden (WAIT) while it is judged
+    clone.style.backgroundColor = getComputedStyle(svg).backgroundColor; // Plotly paints its paper here
+    for (let i = 0; i < src.length; i++) copy(src[i], dst[i]);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(clone));
+  }
+
+  /** Verdict for an inline SVG as it is drawn now: a result, 'small', or null if unreadable. */
+  async function sampleChart(svg) {
+    const r = svg.getBoundingClientRect();
+    const w = Math.round(r.width), h = Math.round(r.height);
+    if (w < SVG_MIN_W || h < SVG_MIN_H) return 'small';
+    const url = svgPicture(svg, w, h);
+    if (!url) return null;
+    const im = new Image();
+    im.src = url;
+    await im.decode();
+    const px = C.pixels(im, w, h, true);
+    const res = C.classify(px.data, px.w, px.h);
+    // Flipped whole only on its own light paper. Otherwise, on a page Dark Reader darkens, it is
+    // recoloured shape by shape (Dark Reader takes SVG fills for text and keeps them light); on
+    // a site that is dark by itself, only its large light panels are.
+    const flip = res.verdict === 'flip' && res.signals.transp < 0.2;
+    return { verdict: flip ? 'flip' : 'none', full: !flip && darkReaderDark(), signals: res.signals };
+  }
+
+  function startSvg(svg, fresh) {
+    const st = state.get(svg);
+    if (!st || st.source === 'you' || !isActive()) return;
+    if (fresh) st.checks = 0;
+    if (!st.timer && !st.busy) st.timer = setTimeout(chartTick, 0, svg);
+  }
+
+  async function chartTick(svg) {
+    const st = state.get(svg);
+    if (!st) return;
+    st.timer = 0;
+    if (!svg.isConnected || !isActive() || st.source === 'you') return;
+    st.busy = true;
+    let res = null;
+    try { res = await sampleChart(svg); } catch (e) { /* unreadable */ }
+    st.busy = false;
+    if (state.get(svg) !== st || st.source === 'you') return;
+    st.sampled = performance.now();
+    svg.removeAttribute(WAIT);
+    if (res === 'small') return; // judged again if it grows
+    svgSize.observe(svg);
+    st.verdict = res ? res.verdict : 'none';
+    st.full = !!(res && res.full);
+    st.signals = res ? res.signals : null;
+    st.source = res ? 'page' : 'unreadable';
+    apply(svg);
+    const ms = RECHECK[st.checks];
+    if (ms !== undefined && res) {
+      st.checks++;
+      st.timer = setTimeout(chartTick, ms, svg);
+    }
+  }
+
+  // A chart that isn't flipped as a whole is recoloured shape by shape, through the stylesheet
+  // (so peek and the switches still work), each colour given the other lightness with its hue
+  // kept. 'full', on a page Dark Reader darkens (it takes SVG fills for text and keeps them
+  // light, Plotly's plot area and distill.pub's boxes among them): light shapes turn dark, and
+  // dark text, lines and small marks turn light. 'panels', on a site that is dark by itself:
+  // only large light shapes, a light plot area in a dark chart, say.
+  const swapTable = []; // index -> colour
+  const swapIndex = new Map(); // colour as computed -> index
+  const DRAWN = new Set(['rect', 'path', 'polygon', 'polyline', 'line', 'circle', 'ellipse', 'use']);
+  const WORDS = new Set(['text', 'tspan', 'textPath']);
+
+  function swapLightness(c) {
+    const r = c.r / 255, g = c.g / 255, b = c.b / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+    const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    let h = 0;
+    if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return `hsl(${Math.round(h * 60)} ${Math.round(s * 100)}% ${Math.round(Math.min(0.92, Math.max(0.08, 1 - l)) * 100)}%)`;
+  }
+
+  // Shapes in <defs> are drawn by <use> as copies in a shadow tree that no stylesheet reaches,
+  // so their colour goes inline, where the copies pick it up. Their own inline value is kept.
+  const inlined = new Map(); // element -> { fill?: [value, priority], stroke?: [...] }
+
+  function setInline(el, prop, value) {
+    let saved = inlined.get(el);
+    if (!saved) inlined.set(el, (saved = {}));
+    if (!(prop in saved)) saved[prop] = [el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)];
+    el.style.setProperty(prop, value, 'important');
+  }
+
+  /** Inline colours off (peek, or let go) or back on. */
+  function showInline(on) {
+    for (const [el, saved] of inlined) {
+      for (const prop of Object.keys(saved)) {
+        const k = el.getAttribute(prop === 'fill' ? FILL : STROKE);
+        if (on && k !== null) el.style.setProperty(prop, swapTable[k], 'important');
+        else if (saved[prop][0]) el.style.setProperty(prop, saved[prop][0], saved[prop][1]);
+        else el.style.removeProperty(prop);
+      }
+    }
+  }
+
+  /** The chart's elements, and those its <use> elements draw from elsewhere (other SVGs' defs). */
+  function chartElements(svg) {
+    const out = [...svg.querySelectorAll('*')];
+    const seen = new Set(out);
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].localName !== 'use') continue;
+      const ref = (out[i].getAttribute('href') || out[i].getAttribute('xlink:href') || '').trim();
+      const target = ref.startsWith('#') ? document.getElementById(ref.slice(1)) : null;
+      if (!target || seen.has(target)) continue;
+      for (const el of [target, ...target.querySelectorAll('*')]) if (!seen.has(el)) { seen.add(el); out.push(el); }
+    }
+    return out;
+  }
+
+  function recolor(svg, mode) {
+    const els = chartElements(svg);
+    if (!mode) {
+      for (const el of els) {
+        if (!el.hasAttribute(FILL) && !el.hasAttribute(STROKE)) continue;
+        const saved = inlined.get(el);
+        if (saved) {
+          for (const prop of Object.keys(saved)) {
+            if (saved[prop][0]) el.style.setProperty(prop, saved[prop][0], saved[prop][1]);
+            else el.style.removeProperty(prop);
+          }
+          inlined.delete(el);
+        }
+        el.removeAttribute(FILL);
+        el.removeAttribute(STROKE);
+      }
+      return;
+    }
+    const box = svg.getBoundingClientRect();
+    const area = box.width * box.height;
+    let added = false;
+    const mark = (el, attr, value, c, defined) => {
+      let k = swapIndex.get(value);
+      if (k === undefined) {
+        swapIndex.set(value, (k = swapTable.length));
+        swapTable.push(swapLightness(c));
+        added = true;
+      }
+      el.setAttribute(attr, k);
+      if (defined && !peeking) setInline(el, attr === FILL ? 'fill' : 'stroke', swapTable[k]);
+      else if (defined) setInline(el, attr === FILL ? 'fill' : 'stroke', el.style.getPropertyValue(attr === FILL ? 'fill' : 'stroke'));
+    };
+    for (const el of els) {
+      const words = WORDS.has(el.localName);
+      if (!words && !DRAWN.has(el.localName)) continue;
+      if (el.hasAttribute(FILL) || el.hasAttribute(STROKE)) continue; // its computed colours are ours now
+      // A shape in <defs> is drawn by <use> elsewhere, at a size it doesn't know itself.
+      const defined = !!el.closest('defs,symbol') || !svg.contains(el);
+      const cs = getComputedStyle(el);
+      const fill = parseColor(cs.fill);
+      let swapFill = false;
+      if (fill && fill.a >= 0.5 && +cs.fillOpacity >= 0.5) {
+        const L = luma(fill);
+        const b = defined ? null : el.getBoundingClientRect();
+        if (!words && L > 0.75) {
+          swapFill = mode === 'full' ? defined || (b.width >= 8 && b.height >= 8)
+            : !defined && b.width >= 48 && b.height >= 24 && b.width * b.height >= area * 0.1;
+        } else if (mode === 'full' && L < 0.3) {
+          swapFill = words || (!defined && b.width * b.height <= Math.max(576, area * 0.01)); // arrowheads, dots
+        }
+        if (swapFill) mark(el, FILL, cs.fill, fill, defined);
+      }
+      if (mode !== 'full') continue;
+      // Lines: dark ones turn light. Text: its outline (a halo) swaps along with its fill, or not at all.
+      const stroke = parseColor(cs.stroke);
+      if (!stroke || stroke.a < 0.5 || +cs.strokeOpacity < 0.5) continue;
+      if (words ? swapFill : luma(stroke) < 0.3) mark(el, STROKE, cs.stroke, stroke, defined);
+    }
+    if (added) refreshStyle();
+  }
+
+  /** Something was drawn into a chart, or it was resized: look at it again shortly. */
+  function svgChanged(node) {
+    let svg = node;
+    while (svg.ownerSVGElement) svg = svg.ownerSVGElement;
+    const st = state.get(svg);
+    if (!st || st.kind !== 'svg' || st.source === 'you') return;
+    clearTimeout(st.again);
+    st.again = setTimeout(() => { if (!st.timer) startSvg(svg, true); }, 400);
+  }
+
   // ------------------------------------------------------- right-click choices
 
   /**
@@ -685,13 +939,14 @@
    */
   function canvasKey(cv) {
     const id = cv.id && !/\d/.test(cv.id) ? '#' + cv.id : '';
-    const parts = ['canvas' + id];
+    const kind = isChart(cv) ? 'svg' : 'canvas'; // an inline SVG is remembered the same way
+    const parts = [kind + id];
     let n = cv.parentElement;
     for (let i = 0; i < 3 && n && n !== document.body && n !== document.documentElement; i++, n = n.parentElement) {
       const cls = [...n.classList].filter((c) => !/\d/.test(c) && c.length <= 40).sort().slice(0, 3);
       parts.unshift(n.localName + cls.map((c) => '.' + c).join(''));
     }
-    return 'canvas|' + parts.join('>');
+    return kind + '|' + parts.join('>');
   }
 
   /**
@@ -708,7 +963,7 @@
 
   function overrideFor(el, st) {
     if (isImg(el)) return overrides[st.src] || (el.src && overrides[el.src]) || null;
-    return overrides[isCanvas(el) ? canvasKey(el) : st.key] || null;
+    return overrides[isCanvas(el) || isChart(el) ? canvasKey(el) : st.key] || null;
   }
 
   // ------------------------------------------------------------------ frames
@@ -916,8 +1171,8 @@
       if (st.kind === 'video') refreshVideo(el, st);
       return st;
     }
-    st = isCanvas(el)
-      ? { kind: 'canvas', verdict: null, w: el.width, h: el.height, checks: 0, t0: 0, timer: 0 }
+    st = isCanvas(el) ? { kind: 'canvas', verdict: null, w: el.width, h: el.height, checks: 0, t0: 0, timer: 0 }
+      : isChart(el) ? { kind: 'svg', verdict: null, checks: 0, timer: 0 }
       : { kind: 'video', verdict: null, key: videoKey(el) };
     state.set(el, st);
     const mine = overrideFor(el, st);
@@ -928,6 +1183,8 @@
     } else if (st.kind === 'canvas') {
       if (hold) wait(el); // set inside the MutationObserver callback: before first paint
       if (near.has(el)) startCanvas(el, true);
+    } else if (st.kind === 'svg') {
+      if (near.has(el)) startSvg(el, true);
     }
     return st;
   }
@@ -954,6 +1211,7 @@
   function check(el) {
     if (isImg(el)) schedule(el);
     else if (isCanvas(el)) startCanvas(el, false);
+    else if (isChart(el)) startSvg(el, false);
   }
 
   function considerImage(img) {
@@ -990,6 +1248,7 @@
       if (!st) continue;
       const b = e.boundingClientRect;
       if (b.width > 0 && b.width <= SMALL && b.height <= SMALL) el.removeAttribute(WAIT); // small: show at once
+      if (st.kind === 'svg' && !st.verdict && hold && b.width >= SVG_MIN_W && b.height >= SVG_MIN_H) wait(el);
       if (!st.verdict) { check(el); placeCard(el, st); }
       else if (st.stale) apply(el);
     }
@@ -1006,6 +1265,7 @@
       const st = e.isIntersecting && state.get(el);
       if (!st) continue;
       if (st.verdict && st.provisional) apply(el);
+      if (st.kind === 'svg' && !st.verdict) startSvg(el, false);
       if (st.kind !== 'canvas') continue;
       if (!st.verdict || st.source === 'blank') startCanvas(el, false);
       else if (performance.now() - (st.sampled || 0) > 5000) startCanvas(el, true);
@@ -1034,8 +1294,10 @@
   function scan(rootNode) {
     if (isMedia(rootNode)) consider(rootNode);
     else if (isFrame(rootNode)) addFrame(rootNode);
+    else if (rootNode instanceof SVGElement) svgChanged(rootNode); // drawn into a tracked chart
     else if (rootNode.querySelectorAll) {
       rootNode.querySelectorAll('img,canvas,video').forEach(consider);
+      for (const svg of rootNode.querySelectorAll('svg')) if (isChart(svg)) consider(svg);
       rootNode.querySelectorAll(FRAMES).forEach(addFrame);
     }
   }
@@ -1153,6 +1415,9 @@
     if (on === html.hasAttribute(PEEK)) return;
     if (on) html.setAttribute(PEEK, '');
     else html.removeAttribute(PEEK);
+    peeking = on;
+    if (swapTable.length) refreshStyle();
+    if (inlined.size) showInline(!on);
     if (!isTop && from !== parent) post(parent, 'peek', { on });
     for (const fr of frames.keys()) {
       const win = windowOf(fr);
@@ -1182,7 +1447,11 @@
   function mediaAt(x, y) {
     const stack = document.elementsFromPoint(x, y);
     for (let i = 0; i < stack.length; i++) {
-      const el = stack[i];
+      let el = stack[i];
+      if (el instanceof SVGElement && !isChart(el) && el.ownerSVGElement) {
+        while (el.ownerSVGElement) el = el.ownerSVGElement; // a shape in a chart: the chart
+        if (state.get(el)?.kind !== 'svg') continue;
+      }
       if (isMedia(el)) return { el };
       if (el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement ||
           el instanceof HTMLEmbedElement || el instanceof HTMLObjectElement) return { frame: true };
@@ -1234,7 +1503,7 @@
     if (!el || !el.isConnected) return null;
     const st = consider(el);
     if (!st) return null;
-    return st.kind === 'img' ? st.src : st.kind === 'canvas' ? canvasKey(el) : st.key;
+    return st.kind === 'img' ? st.src : st.kind === 'canvas' || st.kind === 'svg' ? canvasKey(el) : st.key;
   }
 
   // ------------------------------------------------------------------ badges
@@ -1339,6 +1608,8 @@
         } else if (st.kind === 'canvas') {
           if (st.gl) settle(el, st, 'none', null, 'webgl');
           else startCanvas(el, true);
+        } else if (st.kind === 'svg') {
+          startSvg(el, true);
         }
         queueBadges();
         continue;

@@ -4,7 +4,7 @@
 // embedded frames, then again next to Dark Reader.
 // `--live` adds LeetCode problem 973. `--shots` writes the README images.
 //
-//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,darkreader]
+//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,darkreader]
 //
 // Runs headless by default (no windows, no focus stealing). A normal Chrome user agent
 // gets LeetCode past Cloudflare's headless check.
@@ -19,7 +19,7 @@ import { root, EXT, DR, launch, settings, flashes, waitFor } from './lib.mjs';
 const IMAGES = path.join(root, 'test/.cache/images');
 const SHOTS = path.join(root, 'docs/images');
 const argv = new Set(process.argv.slice(2));
-// --only frames,cards runs just those parts: images, canvas, cards, frames, darkreader.
+// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, darkreader.
 const onlyArg = process.argv.slice(2).find((a, i, all) => all[i - 1] === '--only');
 const part = (name) => !onlyArg || onlyArg.split(',').includes(name);
 
@@ -226,6 +226,41 @@ const frameDoc = (kind) => `<!doctype html><html><head><meta charset="utf-8"><st
   ${kind === 'transparent' ? '' : '<img id="diagram" src="/lc_tree.jpg"> <img id="photo" src="/photo_b.jpg">'}
   </body></html>`;
 
+// Charts drawn as inline SVG: on white, with a light plot area on dark paper (Plotly under
+// Dark Reader), transparent ones that belong to a dark site's design, an icon, and one that a
+// script draws late.
+function chartFixture(theme) {
+  const axes = (ink) => `<path d="M40 200H380M40 200V20" stroke="${ink}" stroke-width="2" fill="none"/>
+    <polyline points="40,180 120,110 200,140 280,60 380,40" stroke="${ink}" stroke-width="3" fill="none"/>
+    <text x="210" y="228" font-size="14" text-anchor="middle" fill="${ink}">year</text>`;
+  const grid = [60, 100, 140, 180].map((y) => `<path d="M40 ${y}H380" stroke="#fff" stroke-width="1"/>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip chart fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#181a1b;color:#e8e6e3} body.light{background:#fff;color:#222}
+  .grid{display:grid;grid-template-columns:repeat(3,420px);gap:22px} svg.chart{width:400px;height:240px;display:block}
+  </style></head><body class="${theme}"><h1 style="font-size:20px">Inkflip chart test page</h1><div class="grid">
+  <svg id="ch-white" class="chart" viewBox="0 0 400 240"><rect width="400" height="240" fill="#fff"/>${axes('#000')}</svg>
+  <svg id="ch-paper" class="chart" viewBox="0 0 400 240"><rect width="400" height="240" fill="#1c1e22"/>
+    <rect id="ch-plot" x="40" y="20" width="340" height="180" fill="#e5ecf6"/>${grid}<polyline points="40,180 120,110 200,140 280,60 380,40" stroke="#636efa" stroke-width="3" fill="none"/>
+    <text x="210" y="228" font-size="14" text-anchor="middle" fill="#ccc">year</text></svg>
+  <svg id="ch-clear" class="chart" viewBox="0 0 400 240">${axes('#ddd')}</svg>
+  <svg id="ch-dark" class="chart" viewBox="0 0 400 240">${axes('#000')}</svg>
+  <div><svg id="ch-icon" viewBox="0 0 24 24" style="width:24px;height:24px"><rect width="24" height="24" fill="#fff"/></svg></div>
+  <svg id="ch-defs" class="chart" viewBox="0 0 400 240"><defs><symbol id="box" viewBox="0 0 100 60"><rect x="1" y="1" width="98" height="58" rx="8" fill="#e5daf2" stroke="#666" stroke-width="2"/></symbol></defs>
+    <use href="#box" x="20" y="90" width="100" height="60"/><use href="#box" x="150" y="90" width="100" height="60"/><use href="#box" x="280" y="90" width="100" height="60"/>
+    <path d="M120 120H150M250 120H280" stroke="#000" stroke-width="2"/>
+    <text x="70" y="126" text-anchor="middle" font-size="16" fill="#000">read</text><text x="200" y="126" text-anchor="middle" font-size="16" fill="#000">write</text>
+    <text x="330" y="126" text-anchor="middle" font-size="16" fill="#000">step</text><text x="20" y="40" font-size="16" fill="#000">A figure drawn for white paper</text></svg>
+  <div id="late-box"></div>
+  </div>
+  <script>window.setTheme = (t) => { document.body.className = t; };
+  const late = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  late.id = 'ch-late'; late.setAttribute('class', 'chart'); late.setAttribute('viewBox', '0 0 400 240');
+  document.getElementById('late-box').append(late);
+  setTimeout(() => { late.innerHTML = '<rect width="400" height="240" fill="#fff"/>' + ${JSON.stringify(axes('#000'))}; }, 700);</script>
+  </body></html>`;
+}
+
 function serve(handler) {
   return new Promise((resolve) => {
     const s = createServer(handler).listen(0, '127.0.0.1', () => resolve(s));
@@ -253,10 +288,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/(page|canvas|cards|frames)\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas|cards|frames|charts)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture }[m[1]](m[2], OTHER));
+    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture }[m[1]](m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -727,6 +762,57 @@ if (part('frames')) {
   await context.close();
 }
 
+// ------------------------------------------------------------------ part 1e: charts
+
+console.log('\nCharts drawn as inline SVG on a dark fixture page');
+if (part('charts')) {
+  const { context, ctl } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/charts/dark');
+  const look = () => page.evaluate(() => {
+    const out = {};
+    for (const el of document.querySelectorAll('svg[id]')) {
+      out[el.id] = { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: getComputedStyle(el).filter, opacity: getComputedStyle(el).opacity };
+    }
+    const plot = document.getElementById('ch-plot');
+    const m = getComputedStyle(plot).fill.match(/[\d.]+/g).map(Number);
+    out.plot = { fillAttr: plot.getAttribute('data-inkflip-fill'), fill: getComputedStyle(plot).fill, L: (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 };
+    return out;
+  });
+  check('a chart on white is flipped', await waitFor(page, () => getComputedStyle(document.getElementById('ch-white')).filter.startsWith('invert(')), JSON.stringify((await look())['ch-white']));
+  let s = await look();
+  check('…with its white taking the page colour (#181a1b → 8)', s['ch-white'].v === 'flip' && s['ch-white'].l === '8', JSON.stringify(s['ch-white']));
+  check('a light plot area on dark paper gets a dark fill instead', await waitFor(page, () => {
+    const p = document.getElementById('ch-plot');
+    const m = getComputedStyle(p).fill.match(/[\d.]+/g).map(Number);
+    return p.hasAttribute('data-inkflip-fill') && (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 < 0.3;
+  }), JSON.stringify((await look()).plot));
+  s = await look();
+  check('…and that chart is not flipped as a whole', s['ch-paper'].filter === 'none', JSON.stringify(s['ch-paper']));
+  check('transparent drawings on a dark site are part of its design: left alone',
+    s['ch-clear'].filter === 'none' && s['ch-dark'].filter === 'none', JSON.stringify([s['ch-clear'], s['ch-dark']]));
+  check('an icon is never touched', s['ch-icon'].v === null && s['ch-icon'].filter === 'none', JSON.stringify(s['ch-icon']));
+  check('a chart a script draws late is flipped once drawn', await waitFor(page, () =>
+    getComputedStyle(document.getElementById('ch-late')).filter.startsWith('invert(')), JSON.stringify((await look())['ch-late']));
+  check('…and none is left hidden', Object.values(await look()).every((x) => x.opacity === undefined || x.opacity === '1'), JSON.stringify(await look()));
+
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(document.getElementById('ch-white')).filter === 'none' &&
+    getComputedStyle(document.getElementById('ch-plot')).fill === 'rgb(229, 236, 246)', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows the charts as they are', peeked, JSON.stringify(await look()));
+  check('releasing Alt darkens them again', await waitFor(page, () => getComputedStyle(document.getElementById('ch-white')).filter !== 'none' &&
+    getComputedStyle(document.getElementById('ch-plot')).fill !== 'rgb(229, 236, 246)'));
+
+  await page.evaluate(() => window.setTheme('light'));
+  check('page turns light → charts and fills are let go', await waitFor(page, () =>
+    getComputedStyle(document.getElementById('ch-white')).filter === 'none' && !document.getElementById('ch-plot').hasAttribute('data-inkflip-fill')));
+  await page.evaluate(() => window.setTheme('dark'));
+  check('page turns dark again → they return', await waitFor(page, () =>
+    getComputedStyle(document.getElementById('ch-white')).filter !== 'none' && document.getElementById('ch-plot').hasAttribute('data-inkflip-fill')));
+  await context.close();
+}
+
 // ------------------------------------------------------- part 2: next to Dark Reader
 
 let haveDr = true;
@@ -760,6 +846,35 @@ if (!part('darkreader')) {
     return el.getAttribute('data-inkflip') === 'flip' && getComputedStyle(el).filter.startsWith('invert(');
   }, null, 10000));
   await cvPage.close();
+
+  const chPage = await context.newPage();
+  await chPage.goto(BASE + '/charts/light');
+  await chPage.waitForTimeout(2500);
+  const ch = await chPage.evaluate(() => ['ch-white', 'ch-clear', 'ch-dark'].map((id) => {
+    const el = document.getElementById(id);
+    return { id, v: el.getAttribute('data-inkflip'), filter: getComputedStyle(el).filter, fill: getComputedStyle(el.querySelector('rect,path')).fill };
+  }));
+  check('charts Dark Reader darkens are left to it', ch.every((c) => c.filter === 'none'), JSON.stringify(ch));
+  // A figure whose boxes Dark Reader keeps light (it takes SVG fills for text): recoloured
+  // shape by shape, the boxes it draws with <use> included. Checked on screen.
+  const shot = async (id, dx, dy) => {
+    const box = await (await chPage.$('#' + id)).boundingBox();
+    const buf = await chPage.screenshot({ clip: { x: box.x + dx, y: box.y + dy, width: 1, height: 1 } });
+    return ctl.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + b64;
+      await img.decode();
+      const g = new OffscreenCanvas(1, 1).getContext('2d');
+      g.drawImage(img, 0, 0);
+      const [r, gg, b] = g.getImageData(0, 0, 1, 1).data;
+      return (0.2126 * r + 0.7152 * gg + 0.0722 * b) / 255;
+    }, buf.toString('base64'));
+  };
+  const boxL = await shot('ch-defs', 52, 100);
+  check('a figure\'s light boxes drawn by <use> are made dark', boxL < 0.35, `box lightness ${boxL.toFixed(2)}`);
+  const words = await chPage.evaluate(() => getComputedStyle(document.querySelector('#ch-defs text')).fill);
+  check('…and its black labels light', (() => { const m = words.match(/[\d.]+/g).map(Number); return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 > 0.6; })(), words);
+  await chPage.close();
 
   const frPage = await context.newPage();
   await frPage.goto(BASE + '/frames/light');
