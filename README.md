@@ -99,8 +99,9 @@ flipped too, with or without Dark Reader, which doesn't reach them.
 On a dark page, a new image stays hidden until Inkflip has checked it, so it never shows up
 white first. Light pages and sites you switch off are left alone.
 
-I tested Inkflip on 73 real pages and labelled 393 images from them by hand. It gets 389 of
-the 393 right and flips none of the photos.
+I tested Inkflip on 73 real pages and labelled 393 images from them by hand. It gets 392 of
+the 393 right (the last, a black-and-white waveform, is dimmed instead of flipped) and flips
+none of the photos.
 
 ## Install
 

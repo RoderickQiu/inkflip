@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (7 October 2026)
 
 - Light embedded pages are darkened. On a site that is dark by itself, such as react.dev, Dark
   Reader switches off and leaves iframes as they are, so live code previews and other embeds
