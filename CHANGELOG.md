@@ -24,6 +24,13 @@
   distill.pub, are flipped. They have no black ink, so they used to pass for white logos made
   for dark pages; the classifier now also counts grey lines and labels, which a white logo
   doesn't have.
+- Diagrams with most of their parts drawn faint, such as the LSTM figures on colah's blog,
+  are flipped. The soft edges of their pale lines used to pass for photo shading.
+- Black-and-white and sepia photographs, cut out or on white, are never flipped. With no
+  colour to count they could look like flat graphics; their soft shading now marks them as
+  photos. The labelled field set scores 392 of 393 (one waveform is dimmed instead of
+  flipped) with no wrong flips, up from 389, and 240 cut-out photo variants built for this
+  test only flip when washed out until they are almost flat.
 - Verdicts cached by older versions are thrown away, so these images are judged again.
 
 ## 0.3.0 (6 October 2026)

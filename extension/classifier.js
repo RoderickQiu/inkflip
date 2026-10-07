@@ -146,8 +146,16 @@
     // Photos: continuous tone or a rich palette. With no dark ink at all (a white product on
     // white, say), even mild shading is enough: diagrams always carry some ink.
     const photo = s.tone >= 0.30 || s.fg90 >= 40 || (s.dark < 0.01 && s.tone >= 0.15);
+    // A black-and-white or sepia photograph (a team portrait): with no colour to count, its
+    // shading gives it away, softer than any flat diagram's.
+    const monoPhoto = s.color <= 0.05 && s.fg90 >= 8 && s.tone >= 0.2;
     if (s.transp >= 0.2) {
-      if (photo) return 'none'; // a cut-out photograph
+      // A diagram with parts drawn faint (colah's LSTM "focus" figures): the soft edges of
+      // pale lines on a pale panel read as shading, but the palette is tiny, nothing is
+      // colourful or grey, and black ink is left. A cut-out photograph, even of a white
+      // product, is shaded in neutral greys.
+      const faint = s.fg90 <= 8 && s.color <= 0.05 && s.grey < 0.03 && s.dark >= 0.03 && s.light >= 0.75;
+      if ((photo || monoPhoto) && !faint) return 'none'; // a cut-out photograph
       // Mostly dark ink, maybe with coloured nodes: black logos, formulas, line diagrams.
       if (s.dark >= 0.55 && s.color <= 0.6) return 'logo';
       // A white wordmark made for dark pages, maybe with dark details (Notability's outlined
@@ -165,7 +173,7 @@
     }
     if (s.light >= 0.5 && s.border >= 0.6) {
       // Sits on white paper.
-      if (photo) return 'dim';
+      if (photo || monoPhoto) return 'dim';
       // Unless the "paper" has a see-through outline and no ink on it: then the white is the
       // picture, a logo too dense to count as a cut-out (Hex's white one). Same ink test as above.
       if (s.transp >= 0.05 && s.dark < 0.015) return 'none';

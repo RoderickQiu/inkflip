@@ -202,6 +202,39 @@ function greyCard() {
   return img;
 }
 
+function monoPortrait() {
+  // A black-and-white photograph cut out of its background: grey shading with some banding,
+  // no colour. Soft enough to be a photo, though below the colour photo threshold.
+  let seed = 7;
+  const noise = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const img = image(128, 128, [0, 0, 0, 0]);
+  for (let y = 0; y < 128; y++) {
+    for (let x = 0; x < 128; x++) {
+      const dx = (x - 64) / 44, dy = (y - 64) / 56;
+      if (dx * dx + dy * dy > 1) continue;
+      const v = Math.round((70 + 110 * Math.sin(x / 19) * Math.cos(y / 23) ** 2 + y * 0.3 + noise() * 6) / 10) * 10;
+      put(img, x, y, [v, v, v]);
+    }
+  }
+  return img;
+}
+
+function faintDiagram() {
+  // Most of a diagram drawn faint on a pale panel and one path in black (colah's LSTM
+  // figures): the soft edges of the faint strokes read as shading, but the palette is tiny.
+  const img = image(128, 64, [0, 0, 0, 0]);
+  rect(img, 8, 6, 120, 58, [224, 245, 208]);
+  for (let x = 14; x < 112; x += 8) {
+    for (let k = 0; k < 5; k++) {
+      const t = 1 - Math.abs(k - 2) / 3;
+      rect(img, x + k, 10, x + k + 1, 54, [224 - 30 * t, 245 - 24 * t, 208 - 30 * t].map(Math.round));
+    }
+  }
+  rect(img, 19, 14, 22, 51, [0, 0, 0]);
+  rect(img, 19, 13, 61, 16, [0, 0, 0]);
+  return img;
+}
+
 function heatmap() {
   // Pastel cells reaching the edges: lightness encodes the data.
   const img = image(120, 120, [255, 255, 255]);
@@ -287,6 +320,14 @@ test('a white logo has no grey, so the grey-card rule leaves it alone', () => {
   const s = C.measure(whiteLogo().data, 128, 64);
   assert.ok(s.grey < 0.04, JSON.stringify(s));
   assert.equal(C.decide(s), 'none');
+});
+
+test('a black-and-white cut-out photograph is left alone', () => {
+  assert.equal(verdict(monoPortrait()), 'none');
+});
+
+test('a diagram drawn mostly faint, with a black path, is flipped', () => {
+  assert.equal(verdict(faintDiagram()), 'flip');
 });
 
 test('a heatmap is dimmed, not flipped', () => {
