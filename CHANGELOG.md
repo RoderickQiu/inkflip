@@ -2,61 +2,20 @@
 
 ## 0.4.0 (7 October 2026)
 
-- Light embedded pages are darkened. On a site that is dark by itself, such as react.dev, Dark
-  Reader switches off and leaves iframes as they are, so live code previews and other embeds
-  stayed white. Each frame now tells the page around it how light it is, and a light frame on
-  a dark page is flipped like a diagram: its background takes the colour of the panel behind
-  it. The frame is told it was flipped and turns its photos back, so they keep their colours.
-  Alt shows the original frame too. Where Dark Reader darkens the page, frames are left to it.
-- SVG files shown in a frame or an `<object>` (Doxygen's class diagrams, for one) are drawn
-  into an image, judged like any other, and flipped, with or without Dark Reader. Frames
-  written by script (`srcdoc`, `about:blank`) are reached too.
-- A frame no longer clears the site's "dark" note that lets images be held from the first
-  byte on the next visit.
-- White logos on sites that are dark by themselves no longer disappear. Two kinds were being
-  flipped into the background: a dense white logo with only narrow gaps (Hex on
-  claude.com), which looked like a white picture, and a white wordmark beside an icon with a
-  dark outline (Notability), which looked like a diagram drawn for white paper. The
-  classifier now also looks at the image's outline. A white logo meets the page in thin white
-  strokes, and a diagram meets it in dark lines. A light window screenshot is outlined in white
-  too, but it is one solid block, so it still flips.
-- Charts and diagrams drawn as inline SVG are handled. Each large one is drawn into an image
-  in the colours it shows and judged like a picture; one on its own white paper is flipped
-  whole. On a page Dark Reader darkens, it keeps SVG fills light (it treats them like text),
-  which left Plotly's plot areas and distill.pub's boxes light: Inkflip now recolours such a
-  chart shape by shape, light shapes dark and dark text, lines and small marks light, shapes
-  drawn by `<use>` from another SVG's `<defs>` included. On a site that is dark by itself it
-  only darkens a chart's large light panels.
-- Inkflip's stylesheet is marked as a user style, so Dark Reader leaves its colours alone.
-- A flipped video's own controls keep their dark bar: they are turned back with a second
-  filter instead of turning light along with the video.
-- On a site that is dark by itself, the light boxes it paints are darkened: a light box on a
-  dark backdrop, bigger than a button, is flipped as a whole with its pictures turned back
-  (consent banners, light cards, demo panels, light code blocks), and a light form field
-  switches to the browser's dark controls, or is flipped where the site coloured it. A new
-  popup switch, **Darken light boxes**, turns this off. Where Dark Reader darkens the page,
-  boxes are left to it.
-- Pictures that aren't `<img>` are judged by their address and treated the same way: a CSS
-  background on an element that holds nothing else (found again when a stylesheet arrives;
-  where Dark Reader darkens the page, only one set in a `style` attribute, which Dark Reader
-  leaves as it is),
-  a picture in an SVG `<image>`, and a video's poster until the video plays. Each can be
-  corrected from the right-click menu, remembered by its address.
-- Pictures inside web components are handled: shadow roots, open or closed, are found as they
-  appear (also for components whose definition loads late), watched, and given their own copy
-  of Inkflip's stylesheet. MDN's ad card was one picture that stayed white.
-- Light cards drawn in grey on a transparent background, such as the figure previews on
-  distill.pub, are flipped. They have no black ink, so they used to pass for white logos made
-  for dark pages; the classifier now also counts grey lines and labels, which a white logo
-  doesn't have.
-- Diagrams with most of their parts drawn faint, such as the LSTM figures on colah's blog,
-  are flipped. The soft edges of their pale lines used to pass for photo shading.
-- Black-and-white and sepia photographs, cut out or on white, are never flipped. With no
-  colour to count they could look like flat graphics; their soft shading now marks them as
-  photos. The labelled field set scores 392 of 393 (one waveform is dimmed instead of
-  flipped) with no wrong flips, up from 389, and 240 cut-out photo variants built for this
-  test only flip when washed out until they are almost flat.
-- Verdicts cached by older versions are thrown away, so these images are judged again.
+Inkflip now darkens more of what Dark Reader leaves white, not just images. On dark pages,
+these no longer stay white:
+
+- Embedded previews and widgets, like the live code examples on react.dev.
+- Diagrams shown as SVG files, like the class diagrams in code documentation.
+- Charts drawn in the page, like Plotly charts.
+- Pictures inside web components, background pictures and video covers.
+- Light boxes on sites that are already dark: cookie banners, cards, code blocks and text
+  fields. A new switch, **Darken light boxes**, turns this off.
+
+Also:
+
+- Faint diagrams are now flipped, and black-and-white photos never are.
+- A flipped video keeps its controls dark.
 
 ## 0.3.0 (6 October 2026)
 
