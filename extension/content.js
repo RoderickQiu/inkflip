@@ -33,6 +33,8 @@
   const FLIPPED = 'data-inkflip-flipped'; // on this frame's <html>: the page around flips it
   const FILL = 'data-inkflip-fill'; // a shape in a chart, given the other lightness (index into swapTable)
   const STROKE = 'data-inkflip-stroke'; // likewise its outline
+  const PANEL = 'data-inkflip-panel'; // a light box on a dark site, flipped (the backdrop's lightness)
+  const FIELD = 'data-inkflip-field'; // a light form control on a dark site: 'scheme' or 'flip'
   const MSG = '__inkflip'; // tags the messages between a page and its frames
   const DARK_PAGE = 0.40; // a backdrop at or below this lightness counts as dark
   const MAX_WAIT = 2500; // ms a loaded, on-screen image may stay hidden while it is checked
@@ -132,6 +134,17 @@
           css += `[${FILL}="${k}"][${FILL}]${hover}{fill:${c} !important}\n[${STROKE}="${k}"][${STROKE}]${hover}{stroke:${c} !important}\n`;
         });
       }
+    }
+    if (settings.panels) {
+      // A light box: flipped like a picture but without the blend (it may sit over other
+      // content), its pictures turned back, its drop shadow gone (it would invert into a glow).
+      for (let l = 0; l <= 40; l += 2) {
+        css += `${top}[${PANEL}="${l}"]${hover}{filter:invert(${(1 - l / 100).toFixed(2)}) hue-rotate(180deg) !important;box-shadow:none !important}\n`;
+      }
+      css += `${top}[${PANEL}] :is(img,video,canvas,[${ATTR}]):not([${ATTR}="flip"],[${ATTR}="logo"])${hover}` +
+        '{filter:invert(1) hue-rotate(180deg) !important}\n';
+      css += `${top}[${FIELD}="scheme"]{color-scheme:dark !important}\n`;
+      css += `${top}[${FIELD}="flip"]${hover}{filter:invert(0.9) hue-rotate(180deg) !important}\n`;
     }
     if (settings.dim) {
       css += `${on('dim')}[${ATTR_L}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
@@ -1222,31 +1235,115 @@
     return st;
   }
 
-  /** Elements in `root` whose only content is a CSS background picture. */
-  function findBackgrounds(root) {
-    if (!root.querySelectorAll || (!knownDark && pageLightness() > DARK_PAGE && !darkReaderDark())) return;
+  /**
+   * One pass over `root`'s elements and their computed styles: elements whose only content is
+   * a CSS background picture, and light boxes (below). Where Dark Reader darkens the page it
+   * handles stylesheet backgrounds and boxes itself; only pictures set in a style attribute,
+   * which it leaves as they are, are looked at there, and not again on every stylesheet it adds
+   * (`rescan`): that cost the page enough time to delay image verdicts into a white flash.
+   */
+  function findPaint(root, rescan = false) {
+    if (!root.querySelectorAll) return;
+    if (darkReaderDark()) {
+      if (rescan) return;
+      const inline = [...root.querySelectorAll('[style*="url("]')];
+      if (root.nodeType === 1 && root.matches('[style*="url("]')) inline.push(root);
+      for (const el of inline) if (el.style.backgroundImage.includes('url(')) pictureIn(el, getComputedStyle(el));
+      return;
+    }
+    const pictures = knownDark || pageLightness() <= DARK_PAGE;
+    const boxes = boxesWanted();
+    if (!pictures && !boxes) return;
     const els = root.nodeType === 1 ? [root, ...root.querySelectorAll('*')] : root.querySelectorAll('*');
     for (const el of els) {
-      if (el instanceof SVGElement || el === document.body || el === document.documentElement || isMedia(el) || isFrame(el)) continue;
-      const image = getComputedStyle(el).backgroundImage;
-      const st = state.get(el);
-      if (!image.includes('url(') || image.includes('gradient(') || image.includes(',')) {
-        if (st && st.kind === 'bg') { clearTags(el); state.delete(el); }
-        continue;
+      const cs = getComputedStyle(el);
+      if (boxes && !(el instanceof SVGElement)) {
+        const marked = el.hasAttribute(PANEL) || el.hasAttribute(FIELD);
+        const L = backgroundLightness(cs);
+        if ((marked || L > LIGHT_BOX) && el !== document.body && el !== document.documentElement && !isMedia(el) && !isFrame(el)) judgeBox(el, L);
       }
-      const src = /url\(["']?([^"')]+)["']?\)/.exec(image)?.[1];
-      if (!src || (st && st.kind === 'bg' && st.src.endsWith(src))) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width <= SMALL && r.height <= SMALL) continue; // icons and sprites
-      if (el.querySelector(IN_A_PICTURE) || hasText(el)) continue;
-      considerPicture(el, src, 'bg');
+      if (pictures) pictureIn(el, cs);
     }
+  }
+
+  /** Take an element as a picture if its only content is a CSS background picture. */
+  function pictureIn(el, cs) {
+    if (el instanceof SVGElement || el === document.body || el === document.documentElement || isMedia(el) || isFrame(el)) return;
+    const image = cs.backgroundImage;
+    const st = state.get(el);
+    if (!image.includes('url(') || image.includes('gradient(') || image.includes(',')) {
+      if (st && st.kind === 'bg') { clearTags(el); state.delete(el); }
+      return;
+    }
+    const src = /url\(["']?([^"')]+)["']?\)/.exec(image)?.[1];
+    if (!src || (st && st.kind === 'bg' && st.src.endsWith(src))) return;
+    const r = el.getBoundingClientRect();
+    if (r.width <= SMALL && r.height <= SMALL) return; // icons and sprites
+    if (el.querySelector(IN_A_PICTURE) || hasText(el)) return;
+    considerPicture(el, src, 'bg');
+  }
+
+  // ------------------------------------------------------------- light boxes
+  //
+  // On a site that is dark by itself Dark Reader stays off, and every box the site paints
+  // light stays a white block: a consent banner, a light card or demo panel, a light code
+  // block, a plain text field. A light box on a dark backdrop, big enough to be more than a
+  // button, is flipped as a whole, its pictures turned back as in a flipped frame (a light
+  // panel holding only pictures is a card, dimmed instead). A light form control is switched to
+  // the dark colour scheme, or flipped if the site set its colours itself. Where Dark Reader
+  // darkens the page, boxes are its job.
+
+  const LIGHT_BOX = 0.6; // a background lighter than this is a light box
+  const BOX_W = 120, BOX_H = 40, BOX_AREA = 12000; // px: smaller ones are buttons, badges, chips
+  const FIELDS = 'input:not([type]),input[type=text],input[type=search],input[type=email],input[type=url],' +
+    'input[type=tel],input[type=password],input[type=number],textarea,select';
+  const boxes = new Set(); // flipped boxes and switched fields, to let go of together
+
+  function boxesWanted() {
+    return isActive() && settings.panels && !flipped && !darkReaderDark() && pageLightness() <= DARK_PAGE;
+  }
+
+  /** Whether an element sits inside a flipped box (through shadow roots too). */
+  function inBox(el) {
+    for (let n = up(el); n; n = up(n)) if (n.hasAttribute(PANEL)) return true;
+    return false;
+  }
+
+  function letGo(el) {
+    el.removeAttribute(PANEL);
+    el.removeAttribute(FIELD);
+    boxes.delete(el);
+  }
+
+  function judgeBox(el, L) {
+    if (inBox(el)) return letGo(el); // part of a flipped box already
+    const r = el.getBoundingClientRect();
+    const field = el.matches(FIELDS);
+    if (field ? r.width < 24 || r.height < 12 : r.width < BOX_W || r.height < BOX_H || r.width * r.height < BOX_AREA) return letGo(el);
+    if (!field && !(L > LIGHT_BOX)) return letGo(el); // no longer light (our filter leaves its background as it is)
+    // Pictures and nothing to read: a picture card, dimmed with its pictures (see cards).
+    if (!field && !hasText(el) && el.querySelector('img,canvas,video,svg,picture,iframe')) return letGo(el);
+    const ctx = surroundings(el, r);
+    if (ctx.L > DARK_PAGE || ctx.inverted) return letGo(el);
+    boxes.add(el);
+    if (field) {
+      if (el.hasAttribute(FIELD)) return; // its computed colours are ours now
+      // The browser's dark controls first: they keep the site's sizes and shapes. If the site
+      // set the colours itself, they don't change, and the control is flipped instead.
+      el.setAttribute(FIELD, 'scheme');
+      const after = getComputedStyle(el);
+      const bg = parseColor(after.backgroundColor), fg = parseColor(after.color);
+      if (!(bg && luma(bg) <= DARK_PAGE && fg && luma(fg) >= 0.5)) el.setAttribute(FIELD, 'flip');
+      return;
+    }
+    const l = String(Math.min(40, Math.floor(ctx.floor * 50) * 2));
+    if (el.getAttribute(PANEL) !== l) el.setAttribute(PANEL, l);
   }
 
   // Stylesheets arriving can give elements backgrounds: look again, at most twice a second.
   let backgroundsTimer = 0;
   function backgroundsChanged() {
-    if (!backgroundsTimer) backgroundsTimer = setTimeout(() => { backgroundsTimer = 0; findBackgrounds(document); }, 500);
+    if (!backgroundsTimer) backgroundsTimer = setTimeout(() => { backgroundsTimer = 0; findPaint(document, true); }, 500);
   }
 
   /** A video showing its poster: judge the poster until the video plays. */
@@ -1429,7 +1526,7 @@
       for (const im of rootNode.querySelectorAll('image')) considerPicture(im, im.href?.baseVal || '');
     }
     if (rootNode instanceof SVGImageElement) considerPicture(rootNode, rootNode.href.baseVal);
-    findBackgrounds(rootNode);
+    findPaint(rootNode);
   }
 
   const domObserver = new MutationObserver((muts) => {
@@ -1567,6 +1664,17 @@
       if (fr.isConnected) { applyFrame(fr); continue; }
       frames.delete(fr);
       frameSeen.unobserve(fr);
+    }
+    for (const el of boxes) if (!el.isConnected || !boxesWanted()) letGo(el);
+    // Taken before Dark Reader started, a stylesheet background is now its job (it inverts it).
+    if (darkReaderDark()) {
+      for (const el of tracked) {
+        const st = state.get(el);
+        if (st && st.kind === 'bg' && !el.style.backgroundImage.includes('url(')) {
+          clearTags(el);
+          state.delete(el);
+        }
+      }
     }
     reportFrame(false);
     queueBadges();
@@ -1814,6 +1922,7 @@
       settings = { ...DEFAULTS, ...changes.settings.newValue };
       refreshStyle();
       reevaluate();
+      backgroundsChanged(); // boxes and backgrounds may be wanted again
     }
     if (area === 'local' && changes[OVR_KEY]) {
       overrides = changes[OVR_KEY].newValue || {};
@@ -1853,6 +1962,7 @@
     refreshStyle();
     applyOverrides();
     reevaluate();
+    if (document.readyState !== 'loading') findPaint(document); // boxes and backgrounds wait for settings
   }).catch(() => {
     ready = true; // storage unavailable: run with defaults rather than hide images
     refreshStyle();

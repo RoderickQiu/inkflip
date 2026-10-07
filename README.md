@@ -82,6 +82,12 @@ on a dark page. Inkflip recolours such a chart shape by shape: light shapes turn
 text and lines turn light, each keeping its hue. On a site that is dark by itself, only the
 large light panels in a chart are darkened.
 
+On a site that is dark by itself, Dark Reader stays off, so the boxes the site paints light stay
+white: consent banners, light cards and demo panels, light code blocks, text fields. Inkflip
+flips such a box as a whole and turns the pictures in it back. A plain form field is switched
+to the browser's dark controls instead. Boxes smaller than 120 × 40 px, such as buttons, are
+left alone. The **Darken light boxes** switch in the popup turns this off.
+
 Embedded pages (iframes) are flipped when they are light and the page around them is dark.
 Dark Reader darkens them itself wherever it darkens the page, but on a site that is dark by
 itself, such as react.dev, it switches off and the live code previews stay white. Inkflip
@@ -140,8 +146,11 @@ again over the next few seconds while charts animate and PDF pages render.
 
 ## Limitations
 
-- A CSS background picture is left alone when the element also holds text or other content,
-  because the filter would change those too. Dark Reader handles those on pages it darkens.
+- A flipped light box can't be corrected from the right-click menu. Use the **Darken light
+  boxes** switch or turn Inkflip off for the site.
+- A CSS background picture is handled only on an element that holds nothing else, because the
+  filter would change its content too. On pages Dark Reader darkens, only pictures set in a
+  `style` attribute are, since Dark Reader handles the ones from stylesheets.
 - Inline SVG charts with more than 4,000 elements or pictures inside them aren't judged as a
   whole, and shapes filled with gradients or patterns keep their colours.
 - Inside a flipped frame, photos come out with a little less contrast, and CSS background

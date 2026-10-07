@@ -7,6 +7,7 @@ globalThis.INKFLIP_DEFAULTS = Object.freeze({
   dimLevel: 0.8, // brightness of dimmed photos
   hold: true, // on dark pages, keep new images hidden until checked: no white flash
   peek: 'alt', // 'alt' | 'hover' | 'off'
+  panels: true, // on sites that are dark by themselves, flip the light boxes they paint
   badges: false, // label each image with its verdict
   disabledHosts: [],
 });

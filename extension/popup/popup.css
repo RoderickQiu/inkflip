@@ -11,6 +11,7 @@
   --flip: #f2b45a;
   --logo: #5fd0c0;
   --dim: #b9a3ff;
+  --panel: #8fb3ff;
   --none: #6c717a;
   color-scheme: dark;
 }
@@ -197,6 +198,7 @@ body {
 .chip.flip { --c: var(--flip); }
 .chip.logo { --c: var(--logo); }
 .chip.dim { --c: var(--dim); }
+.chip.panel { --c: var(--panel); }
 
 .disabled .row-title, .disabled .row-sub { opacity: .45; }
 
@@ -213,6 +215,7 @@ body {
 }
 
 .slider.off { opacity: .4; pointer-events: none; }
+.slider + .row { border-top: 1px solid var(--line); } /* the slider belongs to the row above it */
 
 .slider input { flex: 1; }
 

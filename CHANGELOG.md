@@ -28,8 +28,16 @@
   drawn by `<use>` from another SVG's `<defs>` included. On a site that is dark by itself it
   only darkens a chart's large light panels.
 - Inkflip's stylesheet is marked as a user style, so Dark Reader leaves its colours alone.
+- On a site that is dark by itself, the light boxes it paints are darkened: a light box on a
+  dark backdrop, bigger than a button, is flipped as a whole with its pictures turned back
+  (consent banners, light cards, demo panels, light code blocks), and a light form field
+  switches to the browser's dark controls, or is flipped where the site coloured it. A new
+  popup switch, **Darken light boxes**, turns this off. Where Dark Reader darkens the page,
+  boxes are left to it.
 - Pictures that aren't `<img>` are judged by their address and treated the same way: a CSS
-  background on an element that holds nothing else (found again when a stylesheet arrives),
+  background on an element that holds nothing else (found again when a stylesheet arrives;
+  where Dark Reader darkens the page, only one set in a `style` attribute, which Dark Reader
+  leaves as it is),
   a picture in an SVG `<image>`, and a video's poster until the video plays. Each can be
   corrected from the right-click menu, remembered by its address.
 - Pictures inside web components are handled: shadow roots, open or closed, are found as they

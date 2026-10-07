@@ -29,7 +29,7 @@ function renderControls() {
   $('enabled').checked = settings.enabled;
   $('site').checked = siteOn;
   $('site').disabled = host === null || !settings.enabled;
-  for (const k of ['flip', 'logo', 'dim', 'hold', 'badges']) $(k).checked = settings[k];
+  for (const k of ['flip', 'logo', 'dim', 'panels', 'hold', 'badges']) $(k).checked = settings[k];
   $('dimLevel').value = settings.dimLevel;
   renderDim();
   for (const b of document.querySelectorAll('[data-peek]')) {
@@ -55,7 +55,7 @@ function bind() {
     renderControls();
     soon();
   });
-  for (const k of ['flip', 'logo', 'dim', 'hold', 'badges']) {
+  for (const k of ['flip', 'logo', 'dim', 'panels', 'hold', 'badges']) {
     $(k).addEventListener('change', (e) => { settings[k] = e.target.checked; save(); renderControls(); soon(); });
   }
   $('dimLevel').addEventListener('input', (e) => { settings.dimLevel = Number(e.target.value); renderDim(); });

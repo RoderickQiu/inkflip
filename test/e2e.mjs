@@ -4,7 +4,7 @@
 // embedded frames, then again next to Dark Reader.
 // `--live` adds LeetCode problem 973. `--shots` writes the README images.
 //
-//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,shadow,pictures,darkreader]
+//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,shadow,pictures,boxes,darkreader]
 //
 // Runs headless by default (no windows, no focus stealing). A normal Chrome user agent
 // gets LeetCode past Cloudflare's headless check.
@@ -19,7 +19,7 @@ import { root, EXT, DR, launch, settings, flashes, waitFor } from './lib.mjs';
 const IMAGES = path.join(root, 'test/.cache/images');
 const SHOTS = path.join(root, 'docs/images');
 const argv = new Set(process.argv.slice(2));
-// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, shadow, pictures, darkreader.
+// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, shadow, pictures, boxes, darkreader.
 const onlyArg = process.argv.slice(2).find((a, i, all) => all[i - 1] === '--only');
 const part = (name) => !onlyArg || onlyArg.split(',').includes(name);
 
@@ -309,10 +309,40 @@ function pictureFixture(theme) {
   <div id="bg-diagram" class="cell"></div>
   <div id="bg-photo" class="cell"></div>
   <div id="bg-text" class="cell">A caption written over the picture</div>
+  <div id="bg-inline" class="cell" style="background:#fff url(/mpl_simpleplot.png) center/contain no-repeat"></div>
   <svg class="cell" viewBox="0 0 340 200"><image id="svg-image" href="/lc_closestplane.jpg" width="340" height="200"/></svg>
   <video id="poster-diagram" class="cell" poster="/lc_merge.jpg" src="/none.mp4"></video>
   <video id="poster-photo" class="cell" poster="/photo_a.jpg"></video>
   </div><script>window.setTheme = (t) => { document.body.className = t; };</script></body></html>`;
+}
+
+// Light boxes a dark site paints itself: panels with text, cards with pictures, a box inside a
+// box, a button, form fields left to the browser or coloured by the site, and a consent banner
+// that a script adds later.
+function boxFixture(theme) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip box fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#181a1b;color:#e8e6e3} body.light{background:#fff;color:#222}
+  .white{background:#fff;color:#222;border-radius:10px;padding:14px;box-shadow:0 4px 16px #0008}
+  .grid{display:grid;grid-template-columns:repeat(3,380px);gap:22px;margin-top:20px}
+  img{display:block;width:100%;height:150px;object-fit:contain}
+  #banner{position:fixed;left:0;right:0;bottom:0;background:#fff;color:#111;padding:16px 24px}
+  </style></head><body class="${theme}"><h1 style="font-size:20px">Inkflip box test page</h1>
+  <div id="box-text" class="white" style="width:600px">A notice the site paints white. <a href="#">Read more</a></div>
+  <div class="grid">
+    <div id="box-photo" class="white">A card with a photo<img id="photo-in-box" src="/photo_b.jpg"></div>
+    <div id="box-diagram" class="white">A card with a diagram<img id="diagram-in-box" src="/lc_tree.jpg"><div id="box-inner" class="white" style="height:60px">A box in a box</div></div>
+    <div id="box-pictures" class="white" style="padding:0"><img id="only-picture" src="/lc_closestplane.jpg" style="height:220px"></div>
+    <div><button id="box-button" style="background:#fff;color:#111;border:0;border-radius:6px;padding:8px 16px">Sign up</button></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="field-plain" value="A text field">
+      <select id="field-select"><option>A select</option></select>
+      <input id="field-styled" value="Coloured by the site" style="background:#fff;color:#111;border:1px solid #ccc">
+    </div>
+  </div>
+  <script>window.setTheme = (t) => { document.body.className = t; };
+  setTimeout(() => { const b = document.createElement('div'); b.id = 'banner'; b.innerHTML = 'We use cookies. <button>Accept</button>'; document.body.append(b); }, 800);</script>
+  </body></html>`;
 }
 
 function serve(handler) {
@@ -342,10 +372,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/(page|canvas|cards|frames|charts|shadow|pictures)\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas|cards|frames|charts|shadow|pictures|boxes)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture, shadow: shadowFixture, pictures: pictureFixture }[m[1]](m[2], OTHER));
+    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture, shadow: shadowFixture, pictures: pictureFixture, boxes: boxFixture }[m[1]](m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -665,8 +695,12 @@ if (part('cards')) {
   check('an app window on a coloured slab: the outer slab is the card', dimmed('card-window') && !s.window.card, JSON.stringify([s['card-window'], s.window]));
   check('…and the window\'s picture is left as is inside it', plain('window-img'), JSON.stringify(s['window-img']));
   check('two shots on a gradient panel share one dimmed card', dimmed('card-pair') && plain('pair-a') && plain('pair-b'), JSON.stringify([s['card-pair'], s['pair-a'], s['pair-b']]));
-  const left = ['reading', 'sparse', 'covered', 'editor', 'teal'].filter((id) => s[id].card || s[id].filter !== 'none');
+  const left = ['reading', 'sparse', 'covered', 'editor', 'teal'].filter((id) => s[id].card);
   check('captioned, sparse, fully covered, editable and dark panels are not cards', !left.length, left.join(', '));
+  const boxed = ['reading', 'editor'].filter((id) => !s[id].filter.startsWith('invert('));
+  check('…the captioned and editable ones are light boxes with something to read: flipped', !boxed.length, boxed.join(', '));
+  const plainPanels = ['sparse', 'covered', 'teal'].filter((id) => s[id].filter !== 'none');
+  check('…and the others are left as they are', !plainPanels.length, plainPanels.join(', '));
   check('…and their light-backed images stay as they are', ['reading-img', 'sparse-img', 'covered-img', 'editor-img'].every(plain),
     JSON.stringify(['reading-img', 'sparse-img', 'covered-img', 'editor-img'].map((id) => s[id])));
   check('an image on a dark panel is still flipped on its own', s['teal-img'].l !== null && s['teal-img'].filter.startsWith('invert('), JSON.stringify(s['teal-img']));
@@ -951,6 +985,58 @@ if (part('pictures')) {
   await context.close();
 }
 
+// ------------------------------------------------------------------ part 1h: light boxes
+
+console.log('\nLight boxes on a site that is dark by itself');
+if (part('boxes')) {
+  const { context, ctl } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/boxes/dark');
+  const look = () => page.evaluate(() => {
+    const out = {};
+    for (const el of document.querySelectorAll('[id]')) {
+      const cs = getComputedStyle(el);
+      const m = cs.backgroundColor.match(/[\d.]+/g)?.map(Number) || [0, 0, 0, 0];
+      out[el.id] = { panel: el.getAttribute('data-inkflip-panel'), field: el.getAttribute('data-inkflip-field'), filter: cs.filter,
+        bgL: m.length > 3 && m[3] === 0 ? null : +((0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255).toFixed(2), shadow: cs.boxShadow };
+    }
+    return out;
+  });
+  check('a light box with text is flipped', await waitFor(page, () => getComputedStyle(document.getElementById('box-text')).filter.startsWith('invert(')), JSON.stringify((await look())['box-text']));
+  await waitFor(page, () => document.getElementById('photo-in-box').hasAttribute('data-inkflip') && document.getElementById('diagram-in-box').hasAttribute('data-inkflip'));
+  await page.waitForTimeout(1200);
+  let s = await look();
+  check('…to just under the page colour, with no glow left from its shadow', s['box-text'].panel === '8' && s['box-text'].shadow === 'none', JSON.stringify(s['box-text']));
+  check('a card with a photo is flipped, and the photo turned back', s['box-photo'].panel === '8' && s['photo-in-box'].filter === 'invert(1) hue-rotate(180deg)',
+    JSON.stringify([s['box-photo'], s['photo-in-box']]));
+  check('a diagram in a flipped card goes dark with it', s['box-diagram'].panel === '8' && s['diagram-in-box'].filter === 'none', JSON.stringify([s['box-diagram'], s['diagram-in-box']]));
+  check('a box inside a flipped box is flipped with it, not again', s['box-inner'].panel === null && s['box-inner'].filter === 'none', JSON.stringify(s['box-inner']));
+  check('a panel holding only a picture is not a box', s['box-pictures'].panel === null, JSON.stringify(s['box-pictures']));
+  check('a button is left as it is', s['box-button'].panel === null && s['box-button'].filter === 'none', JSON.stringify(s['box-button']));
+  check('a plain field and select switch to the dark controls', s['field-plain'].field === 'scheme' && s['field-plain'].bgL < 0.4 &&
+    s['field-select'].field === 'scheme', JSON.stringify([s['field-plain'], s['field-select']]));
+  check('a field the site coloured itself is flipped', s['field-styled'].field === 'flip' && s['field-styled'].filter.startsWith('invert('), JSON.stringify(s['field-styled']));
+  check('a consent banner added later is flipped', await waitFor(page, () => getComputedStyle(document.getElementById('banner')).filter.startsWith('invert(')));
+
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(document.getElementById('box-text')).filter === 'none' &&
+    getComputedStyle(document.getElementById('field-plain')).backgroundColor === 'rgb(255, 255, 255)', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows the boxes as they are', peeked, JSON.stringify((await look())['field-plain']));
+  check('releasing Alt darkens them again', await waitFor(page, () => getComputedStyle(document.getElementById('box-text')).filter !== 'none'));
+
+  await settings(ctl, { panels: false });
+  check('switching off "Darken light boxes" lets them go', await waitFor(page, () => !document.querySelector('[data-inkflip-panel],[data-inkflip-field]')));
+  check('…but leaves the pictures to the other switches', (await look())['diagram-in-box'].filter === 'none');
+  await settings(ctl, { panels: true });
+  check('switching it on finds them again', await waitFor(page, () => getComputedStyle(document.getElementById('box-text')).filter.startsWith('invert(')));
+  await page.evaluate(() => window.setTheme('light'));
+  check('page turns light → boxes are let go', await waitFor(page, () => !document.querySelector('[data-inkflip-panel],[data-inkflip-field]')));
+  await page.evaluate(() => window.setTheme('dark'));
+  check('page turns dark again → they return', await waitFor(page, () => getComputedStyle(document.getElementById('box-text')).filter.startsWith('invert(')));
+  await context.close();
+}
+
 // ------------------------------------------------------- part 2: next to Dark Reader
 
 let haveDr = true;
@@ -1013,6 +1099,19 @@ if (!part('darkreader')) {
   const words = await chPage.evaluate(() => getComputedStyle(document.querySelector('#ch-defs text')).fill);
   check('…and its black labels light', (() => { const m = words.match(/[\d.]+/g).map(Number); return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 > 0.6; })(), words);
   await chPage.close();
+
+  const bxPage = await context.newPage();
+  await bxPage.goto(BASE + '/boxes/light');
+  await bxPage.waitForTimeout(2500);
+  check('where Dark Reader darkens the page, boxes are left to it', await bxPage.evaluate(() => !document.querySelector('[data-inkflip-panel],[data-inkflip-field]')));
+  await bxPage.close();
+
+  const pcPage = await context.newPage();
+  await pcPage.goto(BASE + '/pictures/light');
+  check('a background picture in a style attribute, which Dark Reader leaves, is flipped', await waitFor(pcPage, () =>
+    getComputedStyle(document.getElementById('bg-inline')).filter.startsWith('invert('), null, 10000));
+  check('…while one from a stylesheet is left to Dark Reader', await pcPage.evaluate(() => getComputedStyle(document.getElementById('bg-diagram')).filter === 'none'));
+  await pcPage.close();
 
   const frPage = await context.newPage();
   await frPage.goto(BASE + '/frames/light');
