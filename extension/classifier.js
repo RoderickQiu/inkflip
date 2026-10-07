@@ -3,7 +3,7 @@
  *
  * Shared by the content script, the service worker and the Node tests. Given the RGBA
  * pixels of an image sampled down to at most 128 px (nearest-neighbour, so hairlines
- * survive), it measures seven signals and returns one verdict:
+ * survive), it measures nine signals and returns one verdict:
  *
  *   flip  black-on-white line art (diagrams, plots, text screenshots)
  *   logo  dark ink on a transparent background (invisible on a dark page)
@@ -11,7 +11,7 @@
  *   none  everything else
  *
  * A wrong flip is far worse than a missed one, so every uncertain case falls to dim or none.
- * The thresholds come from labelled real images: research/test-images.tsv (19) and
+ * The thresholds come from labelled real images: research/test-images.tsv (21) and
  * research/field-labels.tsv (393, from 48 field-tested pages; score with research/eval.mjs).
  */
 (function (root) {
@@ -109,6 +109,21 @@
       }
     }
 
+    // Outline: opaque pixels next to a transparent one, i.e. what meets the page's backdrop.
+    // A white logo meets it in white; a diagram drawn for white paper, in dark lines.
+    let edge = 0, edgeLight = 0;
+    for (let row = 0; row < h; row++) {
+      for (let x = 0; x < w; x++) {
+        const i = row * w + x, yi = Y[i];
+        if (yi < 0) continue;
+        if ((x > 0 && Y[i - 1] < 0) || (x + 1 < w && Y[i + 1] < 0) ||
+            (row > 0 && Y[i - w] < 0) || (row + 1 < h && Y[i + w] < 0)) {
+          edge++;
+          if (yi >= LIGHT) edgeLight++;
+        }
+      }
+    }
+
     const o = Math.max(opaque, 1);
     return {
       transp: 1 - opaque / n,
@@ -118,6 +133,8 @@
       fg90,
       tone: gentle / Math.max(pairs, 1),
       border: borderLight / Math.max(border, 1),
+      rim: edgeLight / Math.max(edge, 1), // share of the outline that is light
+      outline: edge / o, // share of the picture on its outline: thin strokes high, solid panels low
     };
   }
 
@@ -130,6 +147,10 @@
       if (photo) return 'none'; // a cut-out photograph
       // Mostly dark ink, maybe with coloured nodes: black logos, formulas, line diagrams.
       if (s.dark >= 0.55 && s.color <= 0.6) return 'logo';
+      // A white wordmark made for dark pages, maybe with dark details (Notability's outlined
+      // icon): thin strokes, outlined in white. Flipping would erase the white. A light window
+      // or panel with a shadow round it is outlined in white too, but it is one solid block.
+      if (s.rim >= 0.85 && s.outline >= 0.2) return 'none';
       // Light or grey fills with dark lines and labels: a diagram drawn for white paper, whose
       // ink would vanish on a dark page. White logos made for dark pages carry no ink: left alone.
       if (s.color <= 0.3 && (s.dark >= 0.05 || (s.light >= 0.4 && s.dark >= 0.015))) return 'flip';
@@ -138,6 +159,9 @@
     if (s.light >= 0.5 && s.border >= 0.6) {
       // Sits on white paper.
       if (photo) return 'dim';
+      // Unless the "paper" has a see-through outline and no ink on it: then the white is the
+      // picture, a logo too dense to count as a cut-out (Hex's white one). Same ink test as above.
+      if (s.transp >= 0.05 && s.dark < 0.015) return 'none';
       // Colour reaching the frame (a heatmap, a map) carries meaning in its lightness: dim it.
       if (s.color >= 0.15 && s.border < 0.8) return 'dim';
       return s.color <= 0.30 ? 'flip' : 'dim';

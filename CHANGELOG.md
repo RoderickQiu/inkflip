@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- White logos on sites that are dark by themselves no longer disappear. Two kinds were being
+  flipped into the background: a dense white logo with only narrow gaps (Hex on
+  claude.com), which looked like a white picture, and a white wordmark beside an icon with a
+  dark outline (Notability), which looked like a diagram drawn for white paper. The
+  classifier now also looks at the image's outline. A white logo meets the page in thin white
+  strokes, and a diagram meets it in dark lines. A light window screenshot is outlined in white
+  too, but it is one solid block, so it still flips.
+- Verdicts cached by older versions are thrown away, so these logos are judged again.
+
 ## 0.3.0 (6 October 2026)
 
 - Canvases get the same verdicts as images. This covers charts and PDF pages that sites draw

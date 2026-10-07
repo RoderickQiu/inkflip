@@ -31,6 +31,7 @@ const server = createServer(async (req, res) => {
   const name = decodeURIComponent(req.url.split('?')[0]);
   const file = name === '/classifier.js' ? path.join(root, 'extension/classifier.js') : path.join(cacheDir, path.basename(name));
   try {
+    if (file.endsWith('.svg')) res.setHeader('Content-Type', 'image/svg+xml');
     res.end(await readFile(file));
   } catch {
     res.statusCode = 404;

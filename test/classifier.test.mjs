@@ -156,6 +156,37 @@ function whiteLogo() {
   return img;
 }
 
+function denseWhiteLogo() {
+  // White block letters with narrow gaps (Hex's logo for dark pages): too little of it is
+  // transparent to count as a cut-out, so the white looks like paper.
+  const img = image(128, 52, [255, 255, 255]);
+  for (const x of [38, 82]) rect(img, x, 0, x + 6, 52, [0, 0, 0, 0]); // between the letters
+  rect(img, 16, 0, 22, 20, [0, 0, 0, 0]); // notches inside them
+  rect(img, 16, 30, 22, 52, [0, 0, 0, 0]);
+  rect(img, 60, 20, 80, 26, [0, 0, 0, 0]);
+  rect(img, 104, 0, 110, 18, [0, 0, 0, 0]);
+  rect(img, 104, 34, 110, 52, [0, 0, 0, 0]);
+  return img;
+}
+
+function whiteWordmark() {
+  // A white wordmark made for dark pages, next to an icon with a dark outline (Notability).
+  const img = image(128, 40, [0, 0, 0, 0]);
+  rect(img, 4, 14, 24, 34, [20, 20, 20]);
+  rect(img, 7, 17, 21, 31, [60, 120, 220]);
+  for (let x = 40; x < 124; x += 8) rect(img, x, 10, x + 3, 34, [255, 255, 255]); // letter stems
+  for (let x = 40; x < 120; x += 16) rect(img, x, 10, x + 11, 13, [255, 255, 255]); // and bowls
+  return img;
+}
+
+function lightWindow() {
+  // A screenshot of a light window with transparent margins round it, where its shadow was.
+  const img = image(128, 96, [0, 0, 0, 0]);
+  rect(img, 12, 10, 116, 86, [252, 252, 252]);
+  for (let y = 22; y < 80; y += 7) rect(img, 20, y, 20 + ((y * 13) % 80), y + 2, [30, 30, 30]);
+  return img;
+}
+
 function heatmap() {
   // Pastel cells reaching the edges: lightness encodes the data.
   const img = image(120, 120, [255, 255, 255]);
@@ -216,6 +247,21 @@ test('coloured nodes with black edges on transparent are brightened', () => {
 
 test('a white logo on transparent is left alone', () => {
   assert.equal(verdict(whiteLogo()), 'none');
+});
+
+test('a dense white logo with only narrow gaps is left alone', () => {
+  const img = denseWhiteLogo();
+  const s = C.measure(img.data, img.w, img.h);
+  assert.ok(s.transp >= 0.05 && s.transp < 0.2, `not in the dense range: ${JSON.stringify(s)}`);
+  assert.equal(C.decide(s), 'none');
+});
+
+test('a white wordmark next to a dark-outlined icon is left alone', () => {
+  assert.equal(verdict(whiteWordmark()), 'none');
+});
+
+test('a light window with transparent margins still flips', () => {
+  assert.equal(verdict(lightWindow()), 'flip');
 });
 
 test('a heatmap is dimmed, not flipped', () => {
