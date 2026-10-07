@@ -28,6 +28,9 @@
   drawn by `<use>` from another SVG's `<defs>` included. On a site that is dark by itself it
   only darkens a chart's large light panels.
 - Inkflip's stylesheet is marked as a user style, so Dark Reader leaves its colours alone.
+- Pictures inside web components are handled: shadow roots, open or closed, are found as they
+  appear (also for components whose definition loads late), watched, and given their own copy
+  of Inkflip's stylesheet. MDN's ad card was one picture that stayed white.
 - Light cards drawn in grey on a transparent background, such as the figure previews on
   distill.pub, are flipped. They have no black ink, so they used to pass for white logos made
   for dark pages; the classifier now also counts grey lines and labels, which a white logo

@@ -4,7 +4,7 @@
 // embedded frames, then again next to Dark Reader.
 // `--live` adds LeetCode problem 973. `--shots` writes the README images.
 //
-//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,darkreader]
+//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,shadow,darkreader]
 //
 // Runs headless by default (no windows, no focus stealing). A normal Chrome user agent
 // gets LeetCode past Cloudflare's headless check.
@@ -19,7 +19,7 @@ import { root, EXT, DR, launch, settings, flashes, waitFor } from './lib.mjs';
 const IMAGES = path.join(root, 'test/.cache/images');
 const SHOTS = path.join(root, 'docs/images');
 const argv = new Set(process.argv.slice(2));
-// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, darkreader.
+// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, shadow, darkreader.
 const onlyArg = process.argv.slice(2).find((a, i, all) => all[i - 1] === '--only');
 const part = (name) => !onlyArg || onlyArg.split(',').includes(name);
 
@@ -261,6 +261,40 @@ function chartFixture(theme) {
   </body></html>`;
 }
 
+// Pictures inside web components: open and closed shadow roots, one nested in another, and a
+// component defined late (its root appears a while after it is on the page).
+function shadowFixture(theme) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip shadow fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#181a1b;color:#e8e6e3} body.light{background:#fff;color:#222}
+  .grid{display:grid;grid-template-columns:repeat(3,360px);gap:22px}
+  </style></head><body class="${theme}"><h1 style="font-size:20px">Inkflip shadow DOM test page</h1><div class="grid">
+  <open-figure src="/lc_tree.jpg" pid="open-img"></open-figure>
+  <closed-figure src="/lc_closestplane.jpg" pid="closed-img"></closed-figure>
+  <outer-figure></outer-figure>
+  <open-figure src="/photo_b.jpg" pid="shadow-photo"></open-figure>
+  <late-figure src="/mpl_simpleplot.png" pid="late-img"></late-figure>
+  </div>
+  <script>
+  const tpl = (src, id) => '<img id="' + id + '" src="' + src + '" style="display:block;width:340px;height:200px;object-fit:contain">';
+  customElements.define('open-figure', class extends HTMLElement { connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }).innerHTML = tpl(this.getAttribute('src'), this.getAttribute('pid')); } });
+  customElements.define('closed-figure', class extends HTMLElement { connectedCallback() { if (this.r) return; this.r = this.attachShadow({ mode: 'closed' }); this.r.innerHTML = tpl(this.getAttribute('src'), this.getAttribute('pid')); window.closedRoot = this.r; } });
+  customElements.define('outer-figure', class extends HTMLElement { connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }).innerHTML = '<open-figure src="/lc_merge.jpg" pid="nested-img"></open-figure>'; } });
+  setTimeout(() => customElements.define('late-figure', class extends HTMLElement { connectedCallback() { if (!this.shadowRoot) this.attachShadow({ mode: 'open' }).innerHTML = tpl(this.getAttribute('src'), this.getAttribute('pid')); } }), 1500);
+  window.setTheme = (t) => { document.body.className = t; };
+  // Finds an element by id through every shadow root (the closed one is kept on window for the test).
+  window.deep = (id) => {
+    const roots = [document, window.closedRoot];
+    for (let i = 0; i < roots.length; i++) {
+      const hit = roots[i] && roots[i].getElementById ? roots[i].getElementById(id) : roots[i]?.querySelector('#' + id);
+      if (hit) return hit;
+      for (const el of roots[i] ? roots[i].querySelectorAll('*') : []) if (el.shadowRoot) roots.push(el.shadowRoot);
+    }
+    return null;
+  };
+  </script></body></html>`;
+}
+
 function serve(handler) {
   return new Promise((resolve) => {
     const s = createServer(handler).listen(0, '127.0.0.1', () => resolve(s));
@@ -288,10 +322,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/(page|canvas|cards|frames|charts)\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas|cards|frames|charts|shadow)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture }[m[1]](m[2], OTHER));
+    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture, shadow: shadowFixture }[m[1]](m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -810,6 +844,41 @@ if (part('charts')) {
   await page.evaluate(() => window.setTheme('dark'));
   check('page turns dark again → they return', await waitFor(page, () =>
     getComputedStyle(document.getElementById('ch-white')).filter !== 'none' && document.getElementById('ch-plot').hasAttribute('data-inkflip-fill')));
+  await context.close();
+}
+
+// ------------------------------------------------------------------ part 1f: shadow roots
+
+console.log('\nPictures inside shadow roots on a dark fixture page');
+if (part('shadow')) {
+  const { context } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/shadow/dark');
+  const look = () => page.evaluate(() => Object.fromEntries(['open-img', 'closed-img', 'nested-img', 'shadow-photo', 'late-img'].map((id) => {
+    const el = window.deep(id);
+    return [id, el && { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: getComputedStyle(el).filter, opacity: getComputedStyle(el).opacity }];
+  })));
+  const flipped = (x) => x && x.v === 'flip' && x.l === '8' && x.filter.startsWith('invert(') && x.opacity === '1';
+  check('an image in an open shadow root is flipped', await waitFor(page, () => getComputedStyle(window.deep('open-img')).filter.startsWith('invert(')), JSON.stringify((await look())['open-img']));
+  let s = await look();
+  check('…with its white taking the page colour', flipped(s['open-img']), JSON.stringify(s['open-img']));
+  check('so is one in a closed shadow root', flipped(s['closed-img']), JSON.stringify(s['closed-img']));
+  check('and one in a root inside another root', flipped(s['nested-img']), JSON.stringify(s['nested-img']));
+  check('a photo in a shadow root is left alone and shown', s['shadow-photo']?.v === 'none' && s['shadow-photo'].filter === 'none' && s['shadow-photo'].opacity === '1', JSON.stringify(s['shadow-photo']));
+  check('a component defined late is reached once its root appears', await waitFor(page, () => {
+    const el = window.deep('late-img');
+    return el && getComputedStyle(el).filter.startsWith('invert(');
+  }, null, 6000), JSON.stringify((await look())['late-img']));
+
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(window.deep('open-img')).filter === 'none', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows them as they are', peeked);
+  check('releasing Alt flips them back', await waitFor(page, () => getComputedStyle(window.deep('open-img')).filter !== 'none'));
+  await page.evaluate(() => window.setTheme('light'));
+  check('page turns light → they are let go', await waitFor(page, () => getComputedStyle(window.deep('closed-img')).filter === 'none'));
+  await page.evaluate(() => window.setTheme('dark'));
+  check('page turns dark again → flipped again', await waitFor(page, () => getComputedStyle(window.deep('closed-img')).filter !== 'none'));
   await context.close();
 }
 

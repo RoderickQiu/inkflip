@@ -67,7 +67,8 @@ More examples are on [the website](https://inkflip.r-q.name).
 | Leave | Other photos, images that are already dark, and anything already inverted | No change |
 
 Canvases, such as charts and pdf.js pages, get the same verdicts. Videos change only when you
-choose an option from the right-click menu.
+choose an option from the right-click menu. Pictures inside web components (shadow DOM, open
+or closed) are found and handled like any other.
 
 On a dark site, a light panel that holds only pictures and no text is dimmed together with
 its pictures, so a product screenshot keeps its real colours.

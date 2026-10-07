@@ -67,6 +67,8 @@
   const isCanvas = (el) => el instanceof HTMLCanvasElement;
   const isVideo = (el) => el instanceof HTMLVideoElement;
   const isChart = (el) => el instanceof SVGSVGElement && !el.ownerSVGElement; // an inline <svg>, outermost
+  /** The parent in the composed tree: out of a shadow root, its host. */
+  const up = (n) => n.parentElement || (n.parentNode instanceof ShadowRoot ? n.parentNode.host : null);
   const isMedia = (el) => isImg(el) || isCanvas(el) || isVideo(el) || isChart(el);
   const FRAMES = 'iframe,object,embed'; // elements that hold a document of their own
   const isFrame = (el) => el instanceof HTMLIFrameElement || el instanceof HTMLObjectElement || el instanceof HTMLEmbedElement;
@@ -83,16 +85,22 @@
     return ready && settings.enabled && !filterMode && !settings.disabledHosts.includes(HOST);
   }
 
-  function buildCss() {
+  /**
+   * The stylesheet for this document, or for a shadow root inside it (`shadow`), whose rules
+   * can't see <html>: there peek and a flipped frame are written into the text instead.
+   */
+  function buildCss(shadow = false) {
     let css = '';
     if (!ready || (isActive() && settings.hold)) css += `:is(img,canvas,svg,${FRAMES})[${WAIT}]{opacity:0 !important}\n`;
-    if (!isActive()) return css;
+    if (!isActive() || (shadow && peeking)) return css;
     const hover = settings.peek === 'hover' ? ':not(:hover)' : '';
-    const on = (v, tags) => `html:not([${PEEK}]) ${tags ? `:is(${tags})` : ''}[${ATTR}="${v}"]`;
+    const top = shadow ? '' : `html:not([${PEEK}]) `;
+    const on = (v, tags) => `${top}${tags ? `:is(${tags})` : ''}[${ATTR}="${v}"]`;
     // A light frame that the page around it flips: turn its pictures back, except the ones
     // Inkflip would flip anyway. Pointing into the frame hovers both, so `hover` stays in step.
-    css += `html[${FLIPPED}]:not([${PEEK}])${hover} :is(img,canvas,video):not([${ATTR}="flip"],[${ATTR}="logo"])` +
-      '{filter:invert(1) hue-rotate(180deg) !important}\n';
+    const back = `:is(img,canvas,video):not([${ATTR}="flip"],[${ATTR}="logo"])`;
+    if (!shadow) css += `html[${FLIPPED}]:not([${PEEK}])${hover} ${back}{filter:invert(1) hue-rotate(180deg) !important}\n`;
+    else if (flipped) css += `${back}{filter:invert(1) hue-rotate(180deg) !important}\n`;
     if (settings.flip || settings.logo) {
       // Invert so white lands just below the backdrop's darkest channel, then blend with
       // `lighten`: the image's background takes the backdrop's exact colour (tinted panels
@@ -127,7 +135,7 @@
     }
     if (settings.dim) {
       css += `${on('dim')}[${ATTR_L}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
-      css += `html:not([${PEEK}]) [${CARD}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
+      css += `${top}[${CARD}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
     }
     return css;
   }
@@ -135,6 +143,12 @@
   function refreshStyle() {
     style.textContent = buildCss();
     if (!style.isConnected) document.documentElement.appendChild(style);
+    if (!shadowStyles.size) return;
+    const css = buildCss(true);
+    for (const [root, s] of shadowStyles) {
+      if (s.textContent !== css) s.textContent = css;
+      if (!s.isConnected) root.appendChild(s);
+    }
   }
 
   // ------------------------------------------------------------ surroundings
@@ -186,7 +200,7 @@
    */
   function surroundings(img, rect) {
     let bg = null, inverted = false;
-    for (let n = img.parentElement; n; n = n.parentElement) {
+    for (let n = up(img); n; n = up(n)) {
       const cs = getComputedStyle(n);
       if (!inverted && cs.filter !== 'none' && cs.filter.includes('invert')) inverted = true;
       if (bg === null) {
@@ -200,7 +214,8 @@
     if (onScreen) {
       const x = Math.min(Math.max(rect.left + rect.width / 2, 0), innerWidth - 1);
       const y = Math.min(Math.max(rect.top + rect.height / 2, 0), innerHeight - 1);
-      const stack = document.elementsFromPoint(x, y);
+      const root = img.getRootNode();
+      const stack = (root instanceof ShadowRoot ? root : document).elementsFromPoint(x, y);
       let i = stack.indexOf(img);
       i = i >= 0 ? i + 1 : stack.findIndex((e) => e.contains(img)); // img may not be hit-testable
       for (let k = Math.max(i, 0); i >= 0 && k < stack.length; k++) {
@@ -298,7 +313,7 @@
   function findCard(el) {
     if (!isActive() || !settings.dim || pageLightness() > DARK_PAGE) return null;
     const panels = [];
-    for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    for (let n = up(el); n && n !== document.body && n !== document.documentElement; n = up(n)) {
       const cs = getComputedStyle(n);
       const L = backgroundLightness(cs);
       if (L === undefined) return null;
@@ -1058,6 +1073,7 @@
     flipped = on;
     if (on) document.documentElement.setAttribute(FLIPPED, '');
     else document.documentElement.removeAttribute(FLIPPED);
+    if (shadowStyles.size) refreshStyle();
     themeChanged();
   }
 
@@ -1272,15 +1288,15 @@
     }
   });
 
-  document.addEventListener('load', (e) => {
+  function loaded_(e) {
     const img = e.target;
     if (img instanceof HTMLLinkElement) { themeChanged(); return; } // a stylesheet arrived
     if (!(img instanceof HTMLImageElement)) return;
     const st = consider(img);
     if (st && !st.verdict && near.has(img)) schedule(img);
-  }, true);
+  }
 
-  document.addEventListener('error', (e) => {
+  function failed(e) {
     const img = e.target;
     if (!(img instanceof HTMLImageElement)) return;
     const st = consider(img);
@@ -1289,9 +1305,14 @@
       st.source = 'broken';
       apply(img);
     }
-  }, true);
+  }
+
+  // Neither event bubbles out of a shadow root: each root gets these listeners too.
+  document.addEventListener('load', loaded_, true);
+  document.addEventListener('error', failed, true);
 
   function scan(rootNode) {
+    findShadows(rootNode);
     if (isMedia(rootNode)) consider(rootNode);
     else if (isFrame(rootNode)) addFrame(rootNode);
     else if (rootNode instanceof SVGElement) svgChanged(rootNode); // drawn into a tracked chart
@@ -1323,9 +1344,57 @@
       }
     }
   });
-  domObserver.observe(document, {
-    childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'width', 'height'],
-  });
+  const WATCH = { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'width', 'height'] };
+  domObserver.observe(document, WATCH);
+
+  // ------------------------------------------------------------- shadow roots
+  //
+  // Web components keep their pictures in shadow roots (MDN's ad card, say), out of reach of
+  // the page's selectors, stylesheets and load events. Each root found, open or closed, is
+  // watched like the document, scanned, and given its own copy of the stylesheet. A custom
+  // element that has no root yet may get one once its definition loads: it is looked at again
+  // every second for a while.
+
+  const shadowStyles = new Map(); // shadow root -> our <style> in it
+  const pendingHosts = new Map(); // custom element without a root yet -> checks left
+
+  function shadowOf(el) {
+    if (el.shadowRoot) return el.shadowRoot;
+    if (!el.localName.includes('-')) return null; // closed roots belong to custom elements
+    try { return chrome.dom?.openOrClosedShadowRoot?.(el) || null; } catch (e) { return null; }
+  }
+
+  function adoptShadow(root) {
+    if (shadowStyles.has(root)) return;
+    const s = document.createElement('style');
+    s.className = 'stylus'; // see the main stylesheet
+    s.textContent = buildCss(true);
+    root.appendChild(s);
+    shadowStyles.set(root, s);
+    domObserver.observe(root, WATCH);
+    root.addEventListener('load', loaded_, true);
+    root.addEventListener('error', failed, true);
+    scan(root);
+  }
+
+  function findShadows(node) {
+    const look = (el) => {
+      const root = shadowOf(el);
+      if (root) { pendingHosts.delete(el); adoptShadow(root); }
+      else if (el.localName.includes('-') && !pendingHosts.has(el) && pendingHosts.size < 2000) pendingHosts.set(el, 10);
+    };
+    if (node.nodeType === 1) look(node);
+    if (node.querySelectorAll) for (const el of node.querySelectorAll('*')) look(el);
+  }
+
+  function checkPendingHosts() {
+    for (const [el, left] of pendingHosts) {
+      const root = el.isConnected && shadowOf(el);
+      if (root) { pendingHosts.delete(el); adoptShadow(root); }
+      else if (!el.isConnected || left <= 1) pendingHosts.delete(el);
+      else pendingHosts.set(el, left - 1);
+    }
+  }
 
   // Theme switches: Dark Reader toggling, the site's own dark-mode class, the OS setting.
   const themeObserver = new MutationObserver((muts) => {
@@ -1349,6 +1418,7 @@
     if (lastDark !== null && dark !== lastDark) themeChanged();
     lastDark = dark;
     reportFrame(false);
+    if (pendingHosts.size) checkPendingHosts();
   }, 1000);
 
   // Re-check in the next animation frame, i.e. before the theme change is ever painted.
@@ -1416,7 +1486,7 @@
     if (on) html.setAttribute(PEEK, '');
     else html.removeAttribute(PEEK);
     peeking = on;
-    if (swapTable.length) refreshStyle();
+    if (swapTable.length || shadowStyles.size) refreshStyle();
     if (inlined.size) showInline(!on);
     if (!isTop && from !== parent) post(parent, 'peek', { on });
     for (const fr of frames.keys()) {
@@ -1445,7 +1515,13 @@
 
   /** The image, canvas or video visible at a point, looking through transparent layers. */
   function mediaAt(x, y) {
-    const stack = document.elementsFromPoint(x, y);
+    let stack = document.elementsFromPoint(x, y);
+    for (let depth = 0; depth < 4 && stack.length; depth++) { // into the shadow roots on top
+      const root = shadowOf(stack[0]);
+      const inner = root ? root.elementsFromPoint(x, y) : [];
+      if (!inner.length || inner[0] === stack[0]) break;
+      stack = inner;
+    }
     for (let i = 0; i < stack.length; i++) {
       let el = stack[i];
       if (el instanceof SVGElement && !isChart(el) && el.ownerSVGElement) {
