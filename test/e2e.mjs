@@ -313,6 +313,7 @@ function pictureFixture(theme) {
   <svg class="cell" viewBox="0 0 340 200"><image id="svg-image" href="/lc_closestplane.jpg" width="340" height="200"/></svg>
   <video id="poster-diagram" class="cell" poster="/lc_merge.jpg" src="/none.mp4"></video>
   <video id="poster-photo" class="cell" poster="/photo_a.jpg"></video>
+  <video id="poster-controls" class="cell" poster="/lc_tree.jpg" controls></video>
   </div><script>window.setTheme = (t) => { document.body.className = t; };</script></body></html>`;
 }
 
@@ -958,6 +959,23 @@ if (part('pictures')) {
   check('a picture in an SVG <image> is flipped', flipped(s['svg-image']), JSON.stringify(s['svg-image']));
   check('a video showing a diagram as its poster is flipped', flipped(s['poster-diagram']), JSON.stringify(s['poster-diagram']));
   check('a video with a photo as its poster is left alone', s['poster-photo'].filter === 'none', JSON.stringify(s['poster-photo']));
+  // Its native controls must not turn light with it: their bar is turned back. Checked on screen.
+  const ctl2 = context.pages().find((p) => p.url().startsWith('chrome-extension://'));
+  await waitFor(page, () => getComputedStyle(document.getElementById('poster-controls')).filter.startsWith('invert('));
+  await page.evaluate(() => document.getElementById('poster-controls').scrollIntoView({ block: 'center' }));
+  await page.waitForTimeout(600);
+  const vbox = await (await page.$('#poster-controls')).boundingBox();
+  const bar = await page.screenshot({ clip: { x: vbox.x + 8, y: vbox.y + vbox.height - 6, width: 1, height: 1 } });
+  const barL = await ctl2.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = 'data:image/png;base64,' + b64;
+    await img.decode();
+    const g = new OffscreenCanvas(1, 1).getContext('2d');
+    g.drawImage(img, 0, 0);
+    const [r, gg, b] = g.getImageData(0, 0, 1, 1).data;
+    return (0.2126 * r + 0.7152 * gg + 0.0722 * b) / 255;
+  }, bar.toString('base64'));
+  check('a flipped poster\'s video controls keep their dark bar', barL < 0.5, `bar lightness ${barL.toFixed(2)}`);
   await page.evaluate(() => document.getElementById('poster-diagram').dispatchEvent(new Event('playing')));
   check('…until it plays: then it is shown as it is', await waitFor(page, () => getComputedStyle(document.getElementById('poster-diagram')).filter === 'none'));
 

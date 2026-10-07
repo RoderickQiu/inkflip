@@ -28,6 +28,8 @@
   drawn by `<use>` from another SVG's `<defs>` included. On a site that is dark by itself it
   only darkens a chart's large light panels.
 - Inkflip's stylesheet is marked as a user style, so Dark Reader leaves its colours alone.
+- A flipped video's own controls keep their dark bar: they are turned back with a second
+  filter instead of turning light along with the video.
 - On a site that is dark by itself, the light boxes it paints are darkened: a light box on a
   dark backdrop, bigger than a button, is flipped as a whole with its pictures turned back
   (consent banners, light cards, demo panels, light code blocks), and a light form field

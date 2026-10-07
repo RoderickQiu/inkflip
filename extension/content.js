@@ -124,6 +124,9 @@
       if (settings.logo) sel.push(`${on('logo', 'img,canvas,video')}[${ATTR_L}]${hover}`);
       css += `${sel.join(',')}{background-color:transparent !important}\n`;
       if (settings.flip) css += `${on('flip', FRAMES)}[${ATTR_L}]${hover},${on('logo', FRAMES)}[${ATTR_L}]${hover}{box-shadow:none !important}\n`;
+      // A flipped video's own controls are turned back, or their dark bar would turn light.
+      css += `${on('flip', 'video')}[${ATTR_L}]${hover}::-webkit-media-controls-enclosure,` +
+        `${on('logo', 'video')}[${ATTR_L}]${hover}::-webkit-media-controls-enclosure{filter:invert(1) hue-rotate(180deg) !important}\n`;
     }
     if (settings.flip) {
       // No html ancestor in these selectors: shapes drawn by <use> are copies in a shadow tree
