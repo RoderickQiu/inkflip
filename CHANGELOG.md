@@ -28,6 +28,10 @@
   drawn by `<use>` from another SVG's `<defs>` included. On a site that is dark by itself it
   only darkens a chart's large light panels.
 - Inkflip's stylesheet is marked as a user style, so Dark Reader leaves its colours alone.
+- Pictures that aren't `<img>` are judged by their address and treated the same way: a CSS
+  background on an element that holds nothing else (found again when a stylesheet arrives),
+  a picture in an SVG `<image>`, and a video's poster until the video plays. Each can be
+  corrected from the right-click menu, remembered by its address.
 - Pictures inside web components are handled: shadow roots, open or closed, are found as they
   appear (also for components whose definition loads late), watched, and given their own copy
   of Inkflip's stylesheet. MDN's ad card was one picture that stayed white.

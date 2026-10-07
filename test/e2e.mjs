@@ -4,7 +4,7 @@
 // embedded frames, then again next to Dark Reader.
 // `--live` adds LeetCode problem 973. `--shots` writes the README images.
 //
-//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,shadow,darkreader]
+//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,charts,shadow,pictures,darkreader]
 //
 // Runs headless by default (no windows, no focus stealing). A normal Chrome user agent
 // gets LeetCode past Cloudflare's headless check.
@@ -19,7 +19,7 @@ import { root, EXT, DR, launch, settings, flashes, waitFor } from './lib.mjs';
 const IMAGES = path.join(root, 'test/.cache/images');
 const SHOTS = path.join(root, 'docs/images');
 const argv = new Set(process.argv.slice(2));
-// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, shadow, darkreader.
+// --only frames,cards runs just those parts: images, canvas, cards, frames, charts, shadow, pictures, darkreader.
 const onlyArg = process.argv.slice(2).find((a, i, all) => all[i - 1] === '--only');
 const part = (name) => !onlyArg || onlyArg.split(',').includes(name);
 
@@ -295,6 +295,26 @@ function shadowFixture(theme) {
   </script></body></html>`;
 }
 
+// Pictures that aren't <img>: a diagram as a CSS background (and one under text, which must be
+// left alone), a picture in an SVG <image>, and video posters.
+function pictureFixture(theme) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip picture fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#181a1b;color:#e8e6e3} body.light{background:#fff;color:#222}
+  .grid{display:grid;grid-template-columns:repeat(3,360px);gap:22px} .cell{width:340px;height:200px}
+  #bg-diagram{background:#fff url(/lc_tree.jpg) center/contain no-repeat}
+  #bg-photo{background:url(/photo_b.jpg) center/cover}
+  #bg-text{background:#fff url(/lc_tree.jpg) center/contain no-repeat;color:#000;padding:8px}
+  </style></head><body class="${theme}"><h1 style="font-size:20px">Inkflip picture test page</h1><div class="grid">
+  <div id="bg-diagram" class="cell"></div>
+  <div id="bg-photo" class="cell"></div>
+  <div id="bg-text" class="cell">A caption written over the picture</div>
+  <svg class="cell" viewBox="0 0 340 200"><image id="svg-image" href="/lc_closestplane.jpg" width="340" height="200"/></svg>
+  <video id="poster-diagram" class="cell" poster="/lc_merge.jpg" src="/none.mp4"></video>
+  <video id="poster-photo" class="cell" poster="/photo_a.jpg"></video>
+  </div><script>window.setTheme = (t) => { document.body.className = t; };</script></body></html>`;
+}
+
 function serve(handler) {
   return new Promise((resolve) => {
     const s = createServer(handler).listen(0, '127.0.0.1', () => resolve(s));
@@ -322,10 +342,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/(page|canvas|cards|frames|charts|shadow)\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas|cards|frames|charts|shadow|pictures)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture, shadow: shadowFixture }[m[1]](m[2], OTHER));
+    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture, charts: chartFixture, shadow: shadowFixture, pictures: pictureFixture }[m[1]](m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -879,6 +899,55 @@ if (part('shadow')) {
   check('page turns light → they are let go', await waitFor(page, () => getComputedStyle(window.deep('closed-img')).filter === 'none'));
   await page.evaluate(() => window.setTheme('dark'));
   check('page turns dark again → flipped again', await waitFor(page, () => getComputedStyle(window.deep('closed-img')).filter !== 'none'));
+  await context.close();
+}
+
+// ------------------------------------------------------------- part 1g: other pictures
+
+console.log('\nBackgrounds, SVG <image> and posters on a dark fixture page');
+if (part('pictures')) {
+  const { context } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/pictures/dark');
+  const ids = ['bg-diagram', 'bg-photo', 'bg-text', 'svg-image', 'poster-diagram', 'poster-photo'];
+  const look = () => page.evaluate((ids) => Object.fromEntries(ids.map((id) => {
+    const el = document.getElementById(id);
+    return [id, { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: getComputedStyle(el).filter }];
+  })), ids);
+  const flipped = (x) => ['flip', 'logo'].includes(x.v) && x.l === '8' && x.filter.startsWith('invert(');
+  check('a diagram set as a CSS background is flipped', await waitFor(page, () => getComputedStyle(document.getElementById('bg-diagram')).filter.startsWith('invert(')), JSON.stringify((await look())['bg-diagram']));
+  await waitFor(page, () => ['svg-image', 'poster-diagram', 'poster-photo', 'bg-photo'].every((id) => document.getElementById(id).hasAttribute('data-inkflip')), null, 5000);
+  let s = await look();
+  check('…blending into the page colour', flipped(s['bg-diagram']), JSON.stringify(s['bg-diagram']));
+  check('a photo as a background is left alone', s['bg-photo'].filter === 'none', JSON.stringify(s['bg-photo']));
+  check('a background with text over it is never touched', s['bg-text'].v === null && s['bg-text'].filter === 'none', JSON.stringify(s['bg-text']));
+  check('a picture in an SVG <image> is flipped', flipped(s['svg-image']), JSON.stringify(s['svg-image']));
+  check('a video showing a diagram as its poster is flipped', flipped(s['poster-diagram']), JSON.stringify(s['poster-diagram']));
+  check('a video with a photo as its poster is left alone', s['poster-photo'].filter === 'none', JSON.stringify(s['poster-photo']));
+  await page.evaluate(() => document.getElementById('poster-diagram').dispatchEvent(new Event('playing')));
+  check('…until it plays: then it is shown as it is', await waitFor(page, () => getComputedStyle(document.getElementById('poster-diagram')).filter === 'none'));
+
+  // A background given by a stylesheet that arrives later.
+  await page.evaluate(() => {
+    const d = document.createElement('div');
+    d.id = 'bg-late';
+    d.className = 'cell';
+    document.querySelector('.grid').append(d);
+    setTimeout(() => {
+      const st = document.createElement('style');
+      st.textContent = '#bg-late{background:#fff url(/mpl_simpleplot.png) center/contain no-repeat}';
+      document.head.append(st);
+    }, 300);
+  });
+  check('a background that a later stylesheet sets is found', await waitFor(page, () => getComputedStyle(document.getElementById('bg-late')).filter.startsWith('invert(')));
+
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(document.getElementById('bg-diagram')).filter === 'none' &&
+    getComputedStyle(document.getElementById('svg-image')).filter === 'none', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows them as they are', peeked);
+  await page.evaluate(() => window.setTheme('light'));
+  check('page turns light → let go', await waitFor(page, () => getComputedStyle(document.getElementById('bg-diagram')).filter === 'none'));
   await context.close();
 }
 

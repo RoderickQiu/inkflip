@@ -67,8 +67,10 @@ More examples are on [the website](https://inkflip.r-q.name).
 | Leave | Other photos, images that are already dark, and anything already inverted | No change |
 
 Canvases, such as charts and pdf.js pages, get the same verdicts. Videos change only when you
-choose an option from the right-click menu. Pictures inside web components (shadow DOM, open
-or closed) are found and handled like any other.
+choose an option from the right-click menu, except that a video's poster is judged like an
+image until the video plays. Pictures inside web components (shadow DOM, open or closed), in
+SVG `<image>` elements and in CSS backgrounds are found and handled like any other, a
+background only on an element that holds nothing but that picture.
 
 On a dark site, a light panel that holds only pictures and no text is dimmed together with
 its pictures, so a product screenshot keeps its real colours.
@@ -138,8 +140,8 @@ again over the next few seconds while charts animate and PDF pages render.
 
 ## Limitations
 
-- Only `<img>` and `<canvas>` elements, light frames (`<iframe>`, `<object>`) and inline SVG
-  charts are handled. CSS background images are left to Dark Reader.
+- A CSS background picture is left alone when the element also holds text or other content,
+  because the filter would change those too. Dark Reader handles those on pages it darkens.
 - Inline SVG charts with more than 4,000 elements or pictures inside them aren't judged as a
   whole, and shapes filled with gradients or patterns keep their colours.
 - Inside a flipped frame, photos come out with a little less contrast, and CSS background

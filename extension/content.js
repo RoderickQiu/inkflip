@@ -421,7 +421,8 @@
     const [nw, nh] = natural(img);
     const tiny = (nw > 0 && (nw < 8 || nh < 8)) || (r.width > 0 && (r.width < 8 || r.height < 8));
     const small = r.width > 0 && r.width <= SMALL && r.height <= SMALL;
-    const card = st.kind !== 'video' && st.source !== 'you' && !st.inverted && !tiny && !small ? findCard(img) : null;
+    const card = st.kind !== 'video' && st.kind !== 'bg' && st.kind !== 'image' && st.source !== 'you' &&
+      !st.inverted && !tiny && !small ? findCard(img) : null;
     setCard(img, st, card);
 
     img.setAttribute(ATTR, st.verdict);
@@ -454,7 +455,7 @@
   function natural(el) {
     if (isCanvas(el)) return [el.width, el.height];
     if (isVideo(el)) return [el.videoWidth, el.videoHeight];
-    if (isChart(el)) { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }
+    if (!isImg(el)) { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }
     return [el.naturalWidth, el.naturalHeight];
   }
 
@@ -506,7 +507,19 @@
     if (!st) return;
     const src = st.src;
     let res = null, source = 'page';
-    if (loaded(img, st) && (!remote(src) || img.crossOrigin !== null)) {
+    if (st.kind !== 'img') {
+      // A CSS background, an SVG <image> or a video poster: only its address is known. A
+      // same-origin one is drawn here from a detached image; the rest go to the service worker.
+      if (!remote(src)) {
+        try {
+          const im = new Image();
+          im.src = src;
+          await im.decode();
+          res = sampleElement(im, isSvg(src));
+          if (res && cacheable(src)) send({ type: 'remember', url: src, result: res });
+        } catch (e) { /* unreadable */ }
+      }
+    } else if (loaded(img, st) && (!remote(src) || img.crossOrigin !== null)) {
       res = sampleElement(img, isSvg(src));
       if (res && cacheable(src)) send({ type: 'remember', url: src, result: res });
     }
@@ -520,7 +533,7 @@
         res = r;
       }
     }
-    if (state.get(img) !== st) return; // the image changed while we waited
+    if (state.get(img) !== st || st.src !== src) return; // the image changed while we waited
     st.pending = false;
     if (st.verdict) return; // the cache or your right-click choice got there first
     st.verdict = res ? res.verdict : 'none';
@@ -534,8 +547,8 @@
 
   function schedule(img) {
     const st = state.get(img);
-    if (!st || st.verdict || st.pending || !isActive()) return;
-    if (!loaded(img, st) && !remote(st.src)) return; // same-origin: the load listener calls back
+    if (!st || st.verdict || st.pending || !isActive() || !st.src) return;
+    if (st.kind === 'img' && !loaded(img, st) && !remote(st.src)) return; // same-origin: the load listener calls back
     st.pending = true;
     queue.push(img);
     pump();
@@ -978,6 +991,7 @@
 
   function overrideFor(el, st) {
     if (isImg(el)) return overrides[st.src] || (el.src && overrides[el.src]) || null;
+    if (st.kind === 'bg' || st.kind === 'image') return overrides[st.src] || null; // remembered by address, as images
     return overrides[isCanvas(el) || isChart(el) ? canvasKey(el) : st.key] || null;
   }
 
@@ -1173,6 +1187,95 @@
     }
   });
 
+  // ------------------------------------------------- pictures that aren't <img>
+  //
+  // A diagram set as a CSS background, a picture in an SVG <image>, a video's poster: each is
+  // known only by its address, judged like an image (from the cache, drawn here if same-origin,
+  // or by the service worker) and treated with the same rules. A background is only taken on an
+  // element that is nothing but that picture (no text, nothing else drawn in it), since the
+  // filter covers the whole element. A poster's verdict lasts until the video plays.
+
+  const IN_A_PICTURE = 'img,canvas,video,svg,iframe,object,embed,input,textarea,select,button';
+
+  function considerPicture(el, src, kind = el instanceof SVGImageElement ? 'image' : 'bg') {
+    try { src = src ? new URL(src, document.baseURI).href : ''; } catch (e) { src = ''; }
+    let st = state.get(el);
+    if (st && st.src === src) return st;
+    if (st) { clearTags(el); }
+    if (!src) { state.delete(el); return null; }
+    if (!tracked.has(el)) {
+      tracked.add(el);
+      io.observe(el);
+      seen.observe(el);
+    }
+    st = { kind, src, verdict: null };
+    state.set(el, st);
+    const mine = overrideFor(el, st);
+    if (mine) {
+      st.verdict = mine;
+      st.source = 'you';
+      apply(el);
+      return st;
+    }
+    lookup(el, st);
+    if (near.has(el)) schedule(el);
+    return st;
+  }
+
+  /** Elements in `root` whose only content is a CSS background picture. */
+  function findBackgrounds(root) {
+    if (!root.querySelectorAll || (!knownDark && pageLightness() > DARK_PAGE && !darkReaderDark())) return;
+    const els = root.nodeType === 1 ? [root, ...root.querySelectorAll('*')] : root.querySelectorAll('*');
+    for (const el of els) {
+      if (el instanceof SVGElement || el === document.body || el === document.documentElement || isMedia(el) || isFrame(el)) continue;
+      const image = getComputedStyle(el).backgroundImage;
+      const st = state.get(el);
+      if (!image.includes('url(') || image.includes('gradient(') || image.includes(',')) {
+        if (st && st.kind === 'bg') { clearTags(el); state.delete(el); }
+        continue;
+      }
+      const src = /url\(["']?([^"')]+)["']?\)/.exec(image)?.[1];
+      if (!src || (st && st.kind === 'bg' && st.src.endsWith(src))) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= SMALL && r.height <= SMALL) continue; // icons and sprites
+      if (el.querySelector(IN_A_PICTURE) || hasText(el)) continue;
+      considerPicture(el, src, 'bg');
+    }
+  }
+
+  // Stylesheets arriving can give elements backgrounds: look again, at most twice a second.
+  let backgroundsTimer = 0;
+  function backgroundsChanged() {
+    if (!backgroundsTimer) backgroundsTimer = setTimeout(() => { backgroundsTimer = 0; findBackgrounds(document); }, 500);
+  }
+
+  /** A video showing its poster: judge the poster until the video plays. */
+  function watchPoster(v, st) {
+    if (st.source === 'you') return;
+    if (!st.listening) {
+      st.listening = true;
+      v.addEventListener('playing', () => {
+        if (!st.poster || st.source === 'you') return;
+        st.poster = false;
+        st.src = ''; // a verdict still on its way no longer applies
+        st.verdict = null;
+        st.source = null;
+        clearTags(v);
+        queueBadges();
+      });
+    }
+    const src = v.poster;
+    if (!src || !v.paused || v.played.length) return;
+    if (st.poster && st.src === src) return;
+    st.poster = true;
+    st.src = src;
+    st.verdict = null;
+    st.pending = false;
+    clearTags(v);
+    lookup(v, st);
+    if (near.has(v)) schedule(v);
+  }
+
   // --------------------------------------------------------------- discovery
 
   function consider(el) {
@@ -1201,6 +1304,8 @@
       if (near.has(el)) startCanvas(el, true);
     } else if (st.kind === 'svg') {
       if (near.has(el)) startSvg(el, true);
+    } else if (st.kind === 'video') {
+      watchPoster(el, st);
     }
     return st;
   }
@@ -1225,7 +1330,8 @@
 
   /** Get a verdict under way, whatever kind of element it is. */
   function check(el) {
-    if (isImg(el)) schedule(el);
+    const st = state.get(el);
+    if (isImg(el) || st?.kind === 'bg' || st?.kind === 'image' || st?.poster) schedule(el);
     else if (isCanvas(el)) startCanvas(el, false);
     else if (isChart(el)) startSvg(el, false);
   }
@@ -1320,7 +1426,10 @@
       rootNode.querySelectorAll('img,canvas,video').forEach(consider);
       for (const svg of rootNode.querySelectorAll('svg')) if (isChart(svg)) consider(svg);
       rootNode.querySelectorAll(FRAMES).forEach(addFrame);
+      for (const im of rootNode.querySelectorAll('image')) considerPicture(im, im.href?.baseVal || '');
     }
+    if (rootNode instanceof SVGImageElement) considerPicture(rootNode, rootNode.href.baseVal);
+    findBackgrounds(rootNode);
   }
 
   const domObserver = new MutationObserver((muts) => {
@@ -1330,6 +1439,8 @@
         if (isImg(t)) consider(t);
         else if (isCanvas(t)) canvasResized(t);
         else if (isVideo(t) && m.attributeName === 'src' && state.has(t)) consider(t);
+        else if (isVideo(t) && m.attributeName === 'poster' && state.has(t)) watchPoster(t, state.get(t));
+        else if (t instanceof SVGImageElement) considerPicture(t, t.href.baseVal);
         continue;
       }
       if (m.target.nodeName === 'STYLE' && m.target !== style) themeChanged(); // stylesheet text edited
@@ -1344,7 +1455,7 @@
       }
     }
   });
-  const WATCH = { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'width', 'height'] };
+  const WATCH = { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'width', 'height', 'href', 'poster'] };
   domObserver.observe(document, WATCH);
 
   // ------------------------------------------------------------- shadow roots
@@ -1425,6 +1536,7 @@
   let themeFrame = 0;
   function themeChanged() {
     if (!themeFrame) themeFrame = requestAnimationFrame(() => { themeFrame = 0; reevaluate(); });
+    if (ready) backgroundsChanged();
   }
 
   function reevaluate() {
@@ -1529,6 +1641,8 @@
         if (state.get(el)?.kind !== 'svg') continue;
       }
       if (isMedia(el)) return { el };
+      const kind = state.get(el)?.kind;
+      if (kind === 'bg' || kind === 'image') return { el };
       if (el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement ||
           el instanceof HTMLEmbedElement || el instanceof HTMLObjectElement) return { frame: true };
       const c = parseColor(getComputedStyle(el).backgroundColor);
@@ -1579,7 +1693,8 @@
     if (!el || !el.isConnected) return null;
     const st = consider(el);
     if (!st) return null;
-    return st.kind === 'img' ? st.src : st.kind === 'canvas' || st.kind === 'svg' ? canvasKey(el) : st.key;
+    return st.kind === 'img' || st.kind === 'bg' || st.kind === 'image' ? st.src
+      : st.kind === 'canvas' || st.kind === 'svg' ? canvasKey(el) : st.key;
   }
 
   // ------------------------------------------------------------------ badges
@@ -1677,7 +1792,7 @@
         st.verdict = null;
         st.source = null;
         clearTags(el);
-        if (st.kind === 'img') {
+        if (st.kind === 'img' || st.kind === 'bg' || st.kind === 'image') {
           st.pending = false;
           lookup(el, st);
           schedule(el);
