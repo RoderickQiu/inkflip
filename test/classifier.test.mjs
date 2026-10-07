@@ -187,6 +187,21 @@ function lightWindow() {
   return img;
 }
 
+function greyCard() {
+  // A light card on transparent with grey boxes, arrows and labels (distill.pub's previews).
+  const img = image(128, 64, [0, 0, 0, 0]);
+  rect(img, 6, 8, 122, 56, [244, 244, 244]);
+  for (const x of [16, 56, 96]) {
+    rect(img, x, 18, x + 18, 46, [255, 255, 255]);
+    rect(img, x, 18, x + 18, 19, [150, 150, 150]); rect(img, x, 45, x + 18, 46, [150, 150, 150]);
+    rect(img, x, 18, x + 1, 46, [150, 150, 150]); rect(img, x + 17, 18, x + 18, 46, [150, 150, 150]);
+    rect(img, x + 6, 26, x + 12, 38, [140, 140, 140]); // the label
+  }
+  line(img, 35, 32, 55, 32, [150, 150, 150]);
+  line(img, 75, 32, 95, 32, [150, 150, 150]);
+  return img;
+}
+
 function heatmap() {
   // Pastel cells reaching the edges: lightness encodes the data.
   const img = image(120, 120, [255, 255, 255]);
@@ -262,6 +277,16 @@ test('a white wordmark next to a dark-outlined icon is left alone', () => {
 
 test('a light window with transparent margins still flips', () => {
   assert.equal(verdict(lightWindow()), 'flip');
+});
+
+test('a light card drawn in grey on transparent is flipped', () => {
+  assert.equal(verdict(greyCard()), 'flip');
+});
+
+test('a white logo has no grey, so the grey-card rule leaves it alone', () => {
+  const s = C.measure(whiteLogo().data, 128, 64);
+  assert.ok(s.grey < 0.04, JSON.stringify(s));
+  assert.equal(C.decide(s), 'none');
 });
 
 test('a heatmap is dimmed, not flipped', () => {

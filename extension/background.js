@@ -11,7 +11,7 @@
 importScripts('defaults.js', 'classifier.js');
 
 const C = self.InkflipClassifier;
-const MODEL = 3; // bump when the classifier changes; older cache entries are ignored
+const MODEL = 4; // bump when the classifier changes; older cache entries are ignored
 const CACHE_LIMIT = 20000;
 const DEFAULTS = self.INKFLIP_DEFAULTS;
 

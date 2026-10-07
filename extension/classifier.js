@@ -3,7 +3,7 @@
  *
  * Shared by the content script, the service worker and the Node tests. Given the RGBA
  * pixels of an image sampled down to at most 128 px (nearest-neighbour, so hairlines
- * survive), it measures nine signals and returns one verdict:
+ * survive), it measures ten signals and returns one verdict:
  *
  *   flip  black-on-white line art (diagrams, plots, text screenshots)
  *   logo  dark ink on a transparent background (invisible on a dark page)
@@ -54,7 +54,7 @@
     const Y = new Float32Array(n);
     const buckets = new Uint32Array(4096);
     const ring = Math.max(2, Math.round(Math.min(w, h) * 0.04));
-    let opaque = 0, light = 0, dark = 0, colorful = 0, border = 0, borderLight = 0;
+    let opaque = 0, light = 0, dark = 0, grey = 0, colorful = 0, border = 0, borderLight = 0;
 
     for (let i = 0; i < n; i++) {
       const p = i * 4;
@@ -67,8 +67,10 @@
         light++;
       } else {
         buckets[((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)]++;
+        const sat = (Math.max(r, g, b) - Math.min(r, g, b)) / 255;
         if (y <= DARK) dark++;
-        if ((Math.max(r, g, b) - Math.min(r, g, b)) / 255 >= 0.25) colorful++;
+        else if (sat < 0.1) grey++;
+        if (sat >= 0.25) colorful++;
       }
       const x = i % w, row = (i / w) | 0;
       if (x < ring || row < ring || x >= w - ring || row >= h - ring) {
@@ -129,6 +131,7 @@
       transp: 1 - opaque / n,
       light: light / o,
       dark: dark / o,
+      grey: grey / o, // neutral mid-tones: grey lines and labels
       color: colorful / o,
       fg90,
       tone: gentle / Math.max(pairs, 1),
@@ -154,6 +157,10 @@
       // Light or grey fills with dark lines and labels: a diagram drawn for white paper, whose
       // ink would vanish on a dark page. White logos made for dark pages carry no ink: left alone.
       if (s.color <= 0.3 && (s.dark >= 0.05 || (s.light >= 0.4 && s.dark >= 0.015))) return 'flip';
+      // A light card drawn for white paper in grey instead of black (distill.pub's figure
+      // previews): a near-solid light block with grey lines and labels inside. A white logo
+      // has almost no grey: its pixels are white, only their transparency varies.
+      if (s.light >= 0.75 && s.grey >= 0.04 && s.color <= 0.1 && s.outline < 0.12 && s.tone < 0.2) return 'flip';
       return 'none';
     }
     if (s.light >= 0.5 && s.border >= 0.6) {

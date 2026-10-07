@@ -20,7 +20,11 @@
   classifier now also looks at the image's outline. A white logo meets the page in thin white
   strokes, and a diagram meets it in dark lines. A light window screenshot is outlined in white
   too, but it is one solid block, so it still flips.
-- Verdicts cached by older versions are thrown away, so these logos are judged again.
+- Light cards drawn in grey on a transparent background, such as the figure previews on
+  distill.pub, are flipped. They have no black ink, so they used to pass for white logos made
+  for dark pages; the classifier now also counts grey lines and labels, which a white logo
+  doesn't have.
+- Verdicts cached by older versions are thrown away, so these images are judged again.
 
 ## 0.3.0 (6 October 2026)
 

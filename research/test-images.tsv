@@ -20,3 +20,5 @@ photo_b.jpg	none	https://picsum.photos/seed/bravo/800/600
 photo_c.jpg	none	https://picsum.photos/seed/charlie/800/600
 claude_hex.svg	NONE	https://assets.claude.com/d0f998c7d6cbdea4de7e4ad63e7b1400111f9af8.svg
 claude_notability.svg	NONE	https://assets.claude.com/3d8058eef35804714e8f042407a9d15574f11843.svg
+distill_preview_ai.svg	FLIP	https://distill.pub/2016/augmented-rnns/assets/rnn_preview_ai.svg
+distill_preview_act.svg	FLIP	https://distill.pub/2016/augmented-rnns/assets/rnn_preview_act.svg
