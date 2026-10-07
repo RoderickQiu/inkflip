@@ -10,6 +10,9 @@ pages. It does not collect, sell or share personal data.
 - **Images and canvases on the pages you visit.** Inkflip reads the pixels of images and
   canvases (the drawing areas sites use for charts and PDF pages) to decide how to display
   them. This happens on your device. Video pixels are never read.
+- **Embedded pages.** Inside an embedded page (an iframe), Inkflip reads the background colour
+  and passes its lightness, a single number, to the page around it, so that a white embed on a
+  dark page can be darkened. This message stays in the browser tab.
 - **Cross-origin images.** When a page shows an image from another site, Inkflip cannot read
   its pixels directly, so it downloads the same image again from the same address. That request
   goes only to the server the page already loads the image from, and carries the page's

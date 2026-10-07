@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Light embedded pages are darkened. On a site that is dark by itself, such as react.dev, Dark
+  Reader switches off and leaves iframes as they are, so live code previews and other embeds
+  stayed white. Each frame now tells the page around it how light it is, and a light frame on
+  a dark page is flipped like a diagram: its background takes the colour of the panel behind
+  it. The frame is told it was flipped and turns its photos back, so they keep their colours.
+  Alt shows the original frame too. Where Dark Reader darkens the page, frames are left to it.
+- SVG files shown in a frame or an `<object>` (Doxygen's class diagrams, for one) are drawn
+  into an image, judged like any other, and flipped, with or without Dark Reader. Frames
+  written by script (`srcdoc`, `about:blank`) are reached too.
+- A frame no longer clears the site's "dark" note that lets images be held from the first
+  byte on the next visit.
 - White logos on sites that are dark by themselves no longer disappear. Two kinds were being
   flipped into the background: a dense white logo with only narrow gaps (Hex on
   claude.com), which looked like a white picture, and a white wordmark beside an icon with a

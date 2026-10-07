@@ -20,7 +20,8 @@ transparent backgrounds are hard to see.
 
 Inkflip is a Chrome extension that runs next to Dark Reader. On a dark page it checks each
 image and canvas and either flips it, brightens it, dims it or leaves it alone. It never
-flips photos.
+flips photos. It also darkens white embedded pages, such as live code previews, on sites that
+are dark by themselves.
 
 ## Before and after
 
@@ -70,6 +71,14 @@ choose an option from the right-click menu.
 
 On a dark site, a light panel that holds only pictures and no text is dimmed together with
 its pictures, so a product screenshot keeps its real colours.
+
+Embedded pages (iframes) are flipped when they are light and the page around them is dark.
+Dark Reader darkens them itself wherever it darkens the page, but on a site that is dark by
+itself, such as react.dev, it switches off and the live code previews stay white. Inkflip
+flips such a frame like a diagram, so its background takes the colour of the panel behind it,
+and turns the photos inside it back so they keep their colours. SVG files shown in a frame or
+an `<object>`, such as the class diagrams in Doxygen documentation, are judged like images and
+flipped too, with or without Dark Reader, which doesn't reach them.
 
 On a dark page, a new image stays hidden until Inkflip has checked it, so it never shows up
 white first. Light pages and sites you switch off are left alone.
@@ -121,8 +130,12 @@ again over the next few seconds while charts animate and PDF pages render.
 
 ## Limitations
 
-- Only `<img>` and `<canvas>` elements are handled. CSS background images and inline SVG are
-  left to Dark Reader.
+- Only `<img>` and `<canvas>` elements and light frames (`<iframe>`, `<object>`) are handled. CSS background images
+  and inline SVG are left to Dark Reader.
+- Inside a flipped frame, photos come out with a little less contrast, and CSS background
+  pictures are flipped along with the frame.
+- A frame that is transparent and shows the page through it is left alone, even if its text is
+  dark.
 - WebGL canvases, such as maps, and canvases that contain a picture from another site can't be
   read. Inkflip leaves them alone unless you right-click them.
 - A canvas first drawn more than half a second after it appears shows white briefly.

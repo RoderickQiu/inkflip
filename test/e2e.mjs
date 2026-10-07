@@ -1,9 +1,10 @@
 // End-to-end test: loads the real extension into Playwright's Chromium and checks it on a
 // local fixture page (same-origin, cross-origin and SVG images), on a second one with
-// canvases and a video (including the right-click choices), then again next to Dark Reader.
+// canvases and a video (including the right-click choices), on pages with picture cards and
+// embedded frames, then again next to Dark Reader.
 // `--live` adds LeetCode problem 973. `--shots` writes the README images.
 //
-//   node test/e2e.mjs [--live] [--shots] [--headed]
+//   node test/e2e.mjs [--live] [--shots] [--headed] [--only images,canvas,cards,frames,darkreader]
 //
 // Runs headless by default (no windows, no focus stealing). A normal Chrome user agent
 // gets LeetCode past Cloudflare's headless check.
@@ -18,6 +19,9 @@ import { root, EXT, DR, launch, settings, flashes, waitFor } from './lib.mjs';
 const IMAGES = path.join(root, 'test/.cache/images');
 const SHOTS = path.join(root, 'docs/images');
 const argv = new Set(process.argv.slice(2));
+// --only frames,cards runs just those parts: images, canvas, cards, frames, darkreader.
+const onlyArg = process.argv.slice(2).find((a, i, all) => all[i - 1] === '--only');
+const part = (name) => !onlyArg || onlyArg.split(',').includes(name);
 
 let failures = 0;
 function check(name, ok, detail = '') {
@@ -178,6 +182,50 @@ function cardFixture(theme) {
   </body></html>`;
 }
 
+// Embedded pages, the kind Dark Reader leaves white on a site that is dark by itself: a white
+// document, a transparent one in a white iframe (react.dev's live previews), a transparent one
+// that the browser backs with white because the colour schemes differ, and ones to leave alone.
+function frameFixture(theme, other) {
+  const fr = (id, doc, style = '') => `<iframe id="${id}" src="${other}/doc/${doc}" style="${style}"></iframe>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Inkflip frame fixture</title><style>
+  body{margin:0;padding:32px 40px;font:15px/1.5 system-ui,sans-serif}
+  body.dark{background:#181a1b;color:#e8e6e3} body.light{background:#fff;color:#222}
+  h1{font-size:20px;margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px 18px;max-width:1240px}
+  iframe{display:block;width:100%;height:240px;border:0;border-radius:8px}
+  </style></head><body class="${theme}">
+  <h1>Inkflip frame test page</h1>
+  <div class="grid">
+  ${fr('fr-white', 'white')}
+  ${fr('fr-sandpack', 'transparent', 'background:#fff;box-shadow:0 2px 8px #0006')}
+  ${fr('fr-scheme', 'transparent', 'color-scheme:dark')}
+  ${fr('fr-dark', 'dark')}
+  ${fr('fr-clear', 'transparent')}
+  ${fr('fr-svg', 'svg-white')}
+  <object id="ob-svg" type="image/svg+xml" data="${other}/doc/svg-white" style="display:block;width:100%;height:240px"></object>
+  <object id="ob-svg-clear" type="image/svg+xml" data="${other}/doc/svg-clear" style="display:block;width:100%;height:240px"></object>
+  <iframe id="fr-srcdoc" srcdoc="<body style='background:#fff;font:14px system-ui'><p>A srcdoc preview</p><button>Button</button></body>"></iframe>
+  <iframe id="fr-blank"></iframe>
+  </div>
+  <p>A tiny white frame: ${fr('fr-tiny', 'white', 'display:inline-block;width:40px;height:30px')}</p>
+  <script>window.setTheme = (t) => { document.body.className = t; };
+  const blank = document.getElementById('fr-blank').contentDocument;
+  blank.open(); blank.write("<body style='background:#fff;font:14px system-ui'><p>Written into about:blank by script</p></body>"); blank.close();</script>
+  </body></html>`;
+}
+
+const svgDoc = (white) => `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="240" viewBox="0 0 400 240">${white ? '<rect width="400" height="240" fill="#fff"/>' : ''}
+  <path d="M30 210H370M30 210V30" stroke="#000" stroke-width="2"/><polyline points="30,190 110,120 190,150 270,70 370,50" stroke="#000" stroke-width="3" fill="none"/>
+  <text x="200" y="232" font-size="14" text-anchor="middle">An SVG file</text></svg>`;
+
+const frameDoc = (kind) => `<!doctype html><html><head><meta charset="utf-8"><style>
+  body{margin:0;padding:16px;font:14px/1.4 system-ui,sans-serif}
+  img{display:inline-block;width:45%;height:120px;object-fit:contain;vertical-align:top}
+  </style></head><body style="${{ white: 'background:#fff;color:#111', dark: 'background:#202124;color:#e8eaed', transparent: '' }[kind]}">
+  <p>An embedded page (${kind}). <button>A button</button></p>
+  ${kind === 'transparent' ? '' : '<img id="diagram" src="/lc_tree.jpg"> <img id="photo" src="/photo_b.jpg">'}
+  </body></html>`;
+
 function serve(handler) {
   return new Promise((resolve) => {
     const s = createServer(handler).listen(0, '127.0.0.1', () => resolve(s));
@@ -185,6 +233,16 @@ function serve(handler) {
 }
 
 const imageServer = (req, res) => {
+  const svg = /^\/doc\/svg-(white|clear)$/.exec(req.url);
+  if (svg) {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    return res.end(svgDoc(svg[1] === 'white'));
+  }
+  const doc = /^\/doc\/(white|dark|transparent)$/.exec(req.url);
+  if (doc) {
+    res.setHeader('Content-Type', 'text/html');
+    return res.end(frameDoc(doc[1]));
+  }
   const name = path.basename(decodeURIComponent(req.url.split('?')[0]));
   if (name === 'diagram.svg') {
     res.setHeader('Content-Type', 'image/svg+xml');
@@ -195,10 +253,10 @@ const imageServer = (req, res) => {
 const other = await serve(imageServer); // a second origin: its images taint the page canvas
 const OTHER = `http://localhost:${other.address().port}`;
 const main = await serve((req, res) => {
-  const m = /^\/(page|canvas|cards)\/(dark|light)/.exec(req.url);
+  const m = /^\/(page|canvas|cards|frames)\/(dark|light)/.exec(req.url);
   if (m) {
     res.setHeader('Content-Type', 'text/html');
-    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture }[m[1]](m[2], OTHER));
+    return res.end({ page: fixture, canvas: canvasFixture, cards: cardFixture, frames: frameFixture }[m[1]](m[2], OTHER));
   }
   imageServer(req, res);
 });
@@ -243,7 +301,7 @@ await access(path.join(IMAGES, 'lc_closestplane.jpg')).catch(() => {
 });
 
 console.log('Inkflip on a dark fixture page');
-{
+if (part('images')) {
   const { context, id, ctl } = await launch([EXT]);
   const page = await context.newPage();
   await page.goto(BASE + '/page/dark');
@@ -337,7 +395,7 @@ console.log('Inkflip on a dark fixture page');
 // ---------------------------------------------- part 1b: canvases, video, right-click
 
 console.log('\nCanvases and video on a dark fixture page');
-{
+if (part('canvas')) {
   const { context, ctl, sw } = await launch([EXT]);
   const page = await context.newPage();
   await page.goto(BASE + '/canvas/dark');
@@ -495,7 +553,7 @@ console.log('\nCanvases and video on a dark fixture page');
 // ------------------------------------------------------------ part 1c: picture cards
 
 console.log('\nPicture cards on a dark fixture page');
-{
+if (part('cards')) {
   const { context, ctl } = await launch([EXT]);
   const page = await context.newPage();
   await page.goto(BASE + '/cards/dark');
@@ -553,11 +611,129 @@ console.log('\nPicture cards on a dark fixture page');
   await context.close();
 }
 
+// ------------------------------------------------------------------ part 1d: frames
+
+console.log('\nEmbedded pages on a dark fixture page');
+if (part('frames')) {
+  const { context, ctl } = await launch([EXT]);
+  const page = await context.newPage();
+  await page.goto(BASE + '/frames/dark');
+  const frameOf = async (id) => (await page.$('#' + id)).contentFrame();
+  const look = () => page.evaluate(() => {
+    const out = {};
+    for (const el of document.querySelectorAll('iframe')) {
+      const cs = getComputedStyle(el);
+      out[el.id] = { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: cs.filter, shadow: cs.boxShadow };
+    }
+    return out;
+  });
+  const flippedIds = ['fr-white', 'fr-sandpack', 'fr-scheme'];
+  check('light frames are flipped', await waitFor(page, (ids) => ids.every((id) =>
+    getComputedStyle(document.getElementById(id)).filter.startsWith('invert(')), flippedIds), JSON.stringify(await look()));
+  const changes = await page.evaluate(() => new Promise((resolve) => {
+    const seen = [];
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) seen.push(`${m.target.id}.${m.attributeName}=${m.target.getAttribute(m.attributeName)}`);
+    });
+    for (const el of document.querySelectorAll('iframe,object')) mo.observe(el, { attributes: true, attributeFilter: ['data-inkflip', 'data-inkflip-l'] });
+    setTimeout(() => { mo.disconnect(); resolve(seen); }, 1500);
+  }));
+  check('…and they stay flipped (no back and forth)', changes.length === 0, changes.join(' '));
+  let s = await look();
+  check('…a white page, a transparent one in a white iframe, and one the browser backs with white',
+    flippedIds.every((id) => s[id].v === 'flip' && s[id].l === '8'), JSON.stringify(flippedIds.map((id) => s[id])));
+  check('…with no drop shadow left to glow', s['fr-sandpack'].shadow === 'none', s['fr-sandpack'].shadow);
+  check('a dark frame is left alone', s['fr-dark'].v === 'none' && s['fr-dark'].filter === 'none', JSON.stringify(s['fr-dark']));
+  check('a see-through frame is left alone', s['fr-clear'].v === null && s['fr-clear'].filter === 'none', JSON.stringify(s['fr-clear']));
+  check('a tiny frame is left alone', s['fr-tiny'].filter === 'none', JSON.stringify(s['fr-tiny']));
+
+  // What actually reaches the screen: the frame's white turns into the page's own colour.
+  const pixel = async (id, dx, dy) => {
+    const box = await (await page.$('#' + id)).boundingBox();
+    const buf = await page.screenshot({ clip: { x: box.x + dx, y: box.y + dy, width: 1, height: 1 } });
+    return ctl.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + b64;
+      await img.decode();
+      const g = new OffscreenCanvas(img.width, img.height).getContext('2d');
+      g.drawImage(img, 0, 0);
+      return [...g.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+    }, buf.toString('base64'));
+  };
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  for (const id of flippedIds) {
+    const px = await pixel(id, 300, 230);
+    check(`${id}: its background is the page colour (#181a1b) on screen`, near(px, [0x18, 0x1a, 0x1b]), JSON.stringify(px));
+  }
+
+  const inner = await frameOf('fr-white');
+  check('the flipped frame is told so', await waitFor(inner, () => document.documentElement.hasAttribute('data-inkflip-flipped')));
+  check('…and its pictures get verdicts', await waitFor(inner, () => ['diagram', 'photo'].every((id) => document.getElementById(id).hasAttribute('data-inkflip'))));
+  const pics = () => inner.evaluate(() => Object.fromEntries(['diagram', 'photo'].map((id) => {
+    const el = document.getElementById(id);
+    return [id, { v: el.getAttribute('data-inkflip'), filter: getComputedStyle(el).filter, opacity: getComputedStyle(el).opacity }];
+  })));
+  let p = await pics();
+  check('…its diagram stays flipped with the frame', p.diagram.v === 'flip' && p.diagram.filter === 'none' && p.diagram.opacity === '1', JSON.stringify(p.diagram));
+  check('…and its photo is turned back', p.photo.filter === 'invert(1) hue-rotate(180deg)' && p.photo.opacity === '1', JSON.stringify(p.photo));
+  const darkInner = await frameOf('fr-dark');
+  check('a dark frame is not told it is flipped', !(await darkInner.evaluate(() => document.documentElement.hasAttribute('data-inkflip-flipped'))));
+
+  await page.keyboard.down('Alt');
+  const peeked = await waitFor(page, () => getComputedStyle(document.getElementById('fr-white')).filter === 'none', null, 2000) &&
+    await waitFor(inner, () => getComputedStyle(document.getElementById('photo')).filter === 'none', null, 2000);
+  await page.keyboard.up('Alt');
+  check('holding Alt shows the frame and its photo as they are', peeked);
+  check('releasing Alt flips them back', await waitFor(page, () => getComputedStyle(document.getElementById('fr-white')).filter !== 'none') &&
+    await waitFor(inner, () => getComputedStyle(document.getElementById('photo')).filter !== 'none'));
+
+  await settings(ctl, { flip: false });
+  check('switching off Flip lets the frames go', await waitFor(page, () => getComputedStyle(document.getElementById('fr-white')).filter === 'none'));
+  check('…and the frame turns its photo back to normal', await waitFor(inner, () => !document.documentElement.hasAttribute('data-inkflip-flipped') &&
+    getComputedStyle(document.getElementById('photo')).filter === 'none'));
+  await settings(ctl, { flip: true });
+  check('switching it on flips them again', await waitFor(page, () => getComputedStyle(document.getElementById('fr-white')).filter !== 'none'));
+
+  await page.evaluate(() => window.setTheme('light'));
+  check('page turns light → frames are left alone', await waitFor(page, () =>
+    [...document.querySelectorAll('iframe')].every((el) => getComputedStyle(el).filter === 'none')));
+  await page.evaluate(() => window.setTheme('dark'));
+  check('page turns dark again → they flip again', await waitFor(page, (ids) => ids.every((id) =>
+    getComputedStyle(document.getElementById(id)).filter.startsWith('invert(')), flippedIds));
+
+  // Documents this script couldn't reach before: SVG files, srcdoc and about:blank frames.
+  await waitFor(page, () => ['fr-svg', 'ob-svg', 'ob-svg-clear', 'fr-srcdoc', 'fr-blank'].every((id) =>
+    document.getElementById(id).hasAttribute('data-inkflip-l')), null, 5000);
+  const ext = await look();
+  const svgFlipped = (id) => ['flip', 'logo'].includes(ext[id].v) && ext[id].l === '8' && ext[id].filter.startsWith('invert(');
+  check('an SVG file in an iframe is flipped', svgFlipped('fr-svg'), JSON.stringify(ext['fr-svg']));
+  const objects = await page.evaluate(() => Object.fromEntries(['ob-svg', 'ob-svg-clear'].map((id) => {
+    const el = document.getElementById(id);
+    return [id, { v: el.getAttribute('data-inkflip'), l: el.getAttribute('data-inkflip-l'), filter: getComputedStyle(el).filter }];
+  })));
+  check('an SVG file in an <object> is flipped', ['flip', 'logo'].includes(objects['ob-svg'].v) && objects['ob-svg'].filter.startsWith('invert('), JSON.stringify(objects['ob-svg']));
+  check('a transparent SVG file\'s black lines are made light', ['flip', 'logo'].includes(objects['ob-svg-clear'].v) && objects['ob-svg-clear'].filter.startsWith('invert('), JSON.stringify(objects['ob-svg-clear']));
+  check('a srcdoc frame is flipped', ext['fr-srcdoc'].v === 'flip' && ext['fr-srcdoc'].filter.startsWith('invert('), JSON.stringify(ext['fr-srcdoc']));
+  check('an about:blank frame filled by script is flipped', ext['fr-blank'].v === 'flip' && ext['fr-blank'].filter.startsWith('invert('), JSON.stringify(ext['fr-blank']));
+  for (const id of ['fr-svg', 'fr-srcdoc']) {
+    const px = await pixel(id, 300, 200);
+    check(`${id}: its background is the page colour on screen`, near(px, [0x18, 0x1a, 0x1b]), JSON.stringify(px));
+  }
+
+  // A new document in a flipped frame: told afresh.
+  await page.evaluate((u) => { document.getElementById('fr-white').src = u; }, OTHER + '/doc/dark');
+  check('a frame that navigates to a dark page is let go', await waitFor(page, () =>
+    getComputedStyle(document.getElementById('fr-white')).filter === 'none', null, 5000));
+  await context.close();
+}
+
 // ------------------------------------------------------- part 2: next to Dark Reader
 
 let haveDr = true;
 await access(path.join(DR, 'manifest.json')).catch(() => { haveDr = false; });
-if (!haveDr) {
+if (!part('darkreader')) {
+  // skipped
+} else if (!haveDr) {
   console.log('\n(skipping Dark Reader checks: unpack its MV3 build into test/.cache/darkreader)');
 } else {
   console.log('\nInkflip next to Dark Reader on a light page');
@@ -584,6 +760,21 @@ if (!haveDr) {
     return el.getAttribute('data-inkflip') === 'flip' && getComputedStyle(el).filter.startsWith('invert(');
   }, null, 10000));
   await cvPage.close();
+
+  const frPage = await context.newPage();
+  await frPage.goto(BASE + '/frames/light');
+  const inner = await (await frPage.$('#fr-white')).contentFrame();
+  check('Dark Reader darkens a white frame itself', await waitFor(inner, () => {
+    const c = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number);
+    return c[0] < 60;
+  }, null, 10000));
+  await frPage.waitForTimeout(1000);
+  check('…and Inkflip leaves the frames to it', await frPage.evaluate(() =>
+    [...document.querySelectorAll('iframe')].filter((el) => el.id !== 'fr-svg')
+      .every((el) => !el.hasAttribute('data-inkflip-l') && getComputedStyle(el).filter === 'none')));
+  check('…except SVG files, which it doesn\'t reach', await waitFor(frPage, () =>
+    ['fr-svg', 'ob-svg'].every((id) => getComputedStyle(document.getElementById(id)).filter.startsWith('invert('))));
+  await frPage.close();
 
   if (argv.has('--live')) {
     console.log('\nLeetCode 973, Dark Reader + Inkflip');

@@ -7,8 +7,9 @@
  * A single injected stylesheet turns those tags into CSS filters, but only while the element
  * actually sits on a dark background, which is what data-inkflip-l (the backdrop's lightness)
  * records. Page colours, CSS background images and inline SVG are left to Dark Reader, with
- * one exception: a light panel on a dark page that holds nothing but pictures is dimmed as a
- * whole, pictures included (data-inkflip-card).
+ * two exceptions: a light panel on a dark page that holds nothing but pictures is dimmed as a
+ * whole, pictures included (data-inkflip-card), and a light <iframe> on a dark page that Dark
+ * Reader isn't darkening is flipped like an image (see "frames").
  *
  * No white flash: on dark pages a new image carries data-inkflip-wait (opacity 0) from the
  * moment it enters the DOM until its verdict is in, so it first appears already flipped.
@@ -17,8 +18,10 @@
  */
 (() => {
   'use strict';
-  if (globalThis.__inkflipLoaded || !(document.documentElement instanceof HTMLElement)) return;
+  if (globalThis.__inkflipLoaded) return;
   globalThis.__inkflipLoaded = true;
+  const svgDocument = document.contentType === 'image/svg+xml';
+  if (!svgDocument && !(document.documentElement instanceof HTMLElement)) return;
 
   const C = globalThis.InkflipClassifier;
   const DEFAULTS = globalThis.INKFLIP_DEFAULTS;
@@ -27,6 +30,8 @@
   const WAIT = 'data-inkflip-wait';
   const PEEK = 'data-inkflip-peek';
   const CARD = 'data-inkflip-card';
+  const FLIPPED = 'data-inkflip-flipped'; // on this frame's <html>: the page around flips it
+  const MSG = '__inkflip'; // tags the messages between a page and its frames
   const DARK_PAGE = 0.40; // a backdrop at or below this lightness counts as dark
   const MAX_WAIT = 2500; // ms a loaded, on-screen image may stay hidden while it is checked
   const SMALL = 48; // px: avatars, swatches, icons. Too few pixels to judge reliably and too small
@@ -40,12 +45,15 @@
   const DARK_KEY = 'dark:' + HOST;
   const isTop = window === window.top;
 
+  if (svgDocument) { svgFrame(); return; }
+
   let settings = { ...DEFAULTS };
   let overrides = {}; // image URL, canvas or video key -> 'flip' | 'dim' | 'none', from the right-click menu
   let ready = false; // settings have been read
   let knownDark = false; // this site was dark last time, so hold images from the first byte
   let hold = true; // hide unchecked images (true until settings say otherwise)
   let filterMode = false; // the whole page is inverted (Dark Reader's Filter mode or similar)
+  let flipped = false; // this is a frame, and the page around it flips it (see "frames")
 
   const state = new WeakMap(); // element -> { kind, verdict, signals, source, provisional, ... }
   const tracked = new Set();
@@ -56,6 +64,8 @@
   const isCanvas = (el) => el instanceof HTMLCanvasElement;
   const isVideo = (el) => el instanceof HTMLVideoElement;
   const isMedia = (el) => isImg(el) || isCanvas(el) || isVideo(el);
+  const FRAMES = 'iframe,object,embed'; // elements that hold a document of their own
+  const isFrame = (el) => el instanceof HTMLIFrameElement || el instanceof HTMLObjectElement || el instanceof HTMLEmbedElement;
 
   // ---------------------------------------------------------------- stylesheet
 
@@ -68,23 +78,35 @@
 
   function buildCss() {
     let css = '';
-    if (!ready || (isActive() && settings.hold)) css += `:is(img,canvas)[${WAIT}]{opacity:0 !important}\n`;
+    if (!ready || (isActive() && settings.hold)) css += `:is(img,canvas,${FRAMES})[${WAIT}]{opacity:0 !important}\n`;
     if (!isActive()) return css;
     const hover = settings.peek === 'hover' ? ':not(:hover)' : '';
-    const on = (v) => `html:not([${PEEK}]) :is(img,canvas,video)[${ATTR}="${v}"]`;
+    const on = (v, tags) => `html:not([${PEEK}]) ${tags ? `:is(${tags})` : ''}[${ATTR}="${v}"]`;
+    // A light frame that the page around it flips: turn its pictures back, except the ones
+    // Inkflip would flip anyway. Pointing into the frame hovers both, so `hover` stays in step.
+    css += `html[${FLIPPED}]:not([${PEEK}])${hover} :is(img,canvas,video):not([${ATTR}="flip"],[${ATTR}="logo"])` +
+      '{filter:invert(1) hue-rotate(180deg) !important}\n';
     if (settings.flip || settings.logo) {
       // Invert so white lands just below the backdrop's darkest channel, then blend with
       // `lighten`: the image's background takes the backdrop's exact colour (tinted panels
-      // included) while the now-light ink stays on top. The element's own background colour
-      // goes: sites give transparent images one (Wikipedia: white, darkened by Dark Reader),
-      // and the filter would invert it into a light box.
+      // included) while the now-light ink stays on top.
       for (let l = 0; l <= 40; l += 2) {
         const sel = [];
         if (settings.flip) sel.push(`${on('flip')}[${ATTR_L}="${l}"]${hover}`);
         if (settings.logo) sel.push(`${on('logo')}[${ATTR_L}="${l}"]${hover}`);
         css += `${sel.join(',')}{filter:invert(${(1 - l / 100).toFixed(2)}) hue-rotate(180deg) !important;` +
-          'mix-blend-mode:lighten !important;background-color:transparent !important}\n';
+          'mix-blend-mode:lighten !important}\n';
       }
+      // An image's own background colour goes: sites give transparent images one (Wikipedia:
+      // white, darkened by Dark Reader), and the filter would invert it into a light box. A
+      // frame keeps its own: it is part of what the frame shows, so it is what decides the
+      // flip, and the blend takes its white to the backdrop's colour anyway. A frame's drop
+      // shadow would invert into a pale glow around it.
+      const sel = [];
+      if (settings.flip) sel.push(`${on('flip', 'img,canvas,video')}[${ATTR_L}]${hover}`);
+      if (settings.logo) sel.push(`${on('logo', 'img,canvas,video')}[${ATTR_L}]${hover}`);
+      css += `${sel.join(',')}{background-color:transparent !important}\n`;
+      if (settings.flip) css += `${on('flip', FRAMES)}[${ATTR_L}]${hover},${on('logo', FRAMES)}[${ATTR_L}]${hover}{box-shadow:none !important}\n`;
     }
     if (settings.dim) {
       css += `${on('dim')}[${ATTR_L}]${hover}{filter:brightness(${settings.dimLevel}) !important}\n`;
@@ -125,12 +147,15 @@
 
   const luma = (c) => (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255;
 
+  /** Whether a computed color-scheme value comes out dark. */
+  function schemeDark(scheme = '') {
+    return scheme.includes('dark') &&
+      (!scheme.includes('light') || matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+
   /** Lightness of the browser canvas when nothing on the page paints a background. */
   function canvasLightness() {
-    const scheme = getComputedStyle(document.documentElement).colorScheme || '';
-    const dark = scheme.includes('dark') &&
-      (!scheme.includes('light') || matchMedia('(prefers-color-scheme: dark)').matches);
-    return dark ? 0.07 : 1;
+    return schemeDark(getComputedStyle(document.documentElement).colorScheme) ? 0.07 : 1;
   }
 
   /**
@@ -302,7 +327,7 @@
   function holding() {
     if (!ready) return true; // a few ms before settings arrive: assume a dark page
     if (!isActive() || !settings.hold) return false;
-    return knownDark || darkReaderDark() || pageLightness() <= DARK_PAGE;
+    return knownDark || flipped || darkReaderDark() || pageLightness() <= DARK_PAGE;
   }
 
   function updateHold() {
@@ -378,8 +403,9 @@
     // Reveal now, unless the page is about to turn dark (Dark Reader still loading) and this
     // image would then need flipping: it stays hidden until then, or until the watchdog. A page
     // that is dark on its own, with no Dark Reader, won't change: its light panels stay light.
+    // In a frame that the page around it flips, every verdict is final.
     const native = !st.dark && detectDarkReader() === null && pageLightness() <= DARK_PAGE;
-    if (on || card || native || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny || small) img.removeAttribute(WAIT);
+    if (on || card || native || flipped || st.verdict === 'none' || !hold || st.dark || st.inverted || tiny || small) img.removeAttribute(WAIT);
     queueBadges();
   }
 
@@ -685,6 +711,197 @@
     return overrides[isCanvas(el) ? canvasKey(el) : st.key] || null;
   }
 
+  // ------------------------------------------------------------------ frames
+  //
+  // An embedded page (a live code preview, a form, a widget) is a document of its own. Where
+  // Dark Reader darkens a page it darkens the frames in it too, but on a site that is dark by
+  // itself it stays off, and a light frame stays a white box. This script runs in every frame,
+  // and each one tells the page around it how light it is. A light frame on a dark backdrop is
+  // then flipped like an image (its background takes the backdrop's colour), and told so: it
+  // turns its own pictures back, except the ones it would have flipped anyway.
+
+  const FRAME_LIGHT = 0.6; // a frame lighter than this is a white box on a dark page
+  const frames = new Map(); // iframe, object or embed -> { L, picture, dark, verdict: what its document reported; on }
+
+  function post(win, type, data) {
+    try { win.postMessage({ [MSG]: type, ...data }, '*'); } catch (e) { /* gone */ }
+  }
+
+  /** The window inside a frame element: an <embed> only shows it for a same-origin SVG. */
+  function windowOf(el) {
+    try { return el.contentWindow || el.getSVGDocument?.()?.defaultView || null; } catch (e) { return null; }
+  }
+
+  /**
+   * An SVG file shown in a frame (Doxygen's class diagrams, say) is a document of its own,
+   * with no HTML to hold this script's machinery. Once it has loaded it is drawn into an image
+   * and judged like one, and the verdict goes to the page around it, which flips the frame.
+   */
+  function svgFrame() {
+    if (isTop) return;
+    const C = globalThis.InkflipClassifier;
+    let verdict = null;
+    const send = () => {
+      if (verdict) post(parent, 'report', { L: null, picture: false, dark: false, verdict });
+    };
+    addEventListener('message', (e) => {
+      if (e.source === parent && e.data && e.data[MSG] === 'hello') send();
+    });
+    addEventListener('load', async () => {
+      const root = document.documentElement;
+      try {
+        const im = new Image();
+        im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
+        await im.decode();
+        // Its own size, or the frame's when it has none (width="100%"): the frame may not be
+        // laid out yet, so not its box.
+        const w = im.naturalWidth || innerWidth || 300, h = im.naturalHeight || innerHeight || 150;
+        const px = C.pixels(im, w, h, true);
+        verdict = C.classify(px.data, px.w, px.h).verdict;
+      } catch (e) {
+        verdict = 'none';
+      }
+      send();
+    });
+  }
+
+  /**
+   * Lightness of this document's background as its frame shows it: what is painted behind
+   * the middle of it, by a layer covering at least half of it. null if nothing is (the page
+   * around shows through), undefined if a background picture is.
+   */
+  function ownLightness() {
+    if (darkReaderDark()) return 0.1; // being darkened, maybe not painted yet
+    const html = document.documentElement, body = document.body;
+    const area = innerWidth * innerHeight;
+    const stack = area ? document.elementsFromPoint(innerWidth / 2, innerHeight / 2) : [];
+    for (const n of [...stack, body, html]) {
+      if (!n) continue;
+      if (n !== body && n !== html) {
+        const r = n.getBoundingClientRect();
+        if (r.width * r.height < area / 2) continue;
+      }
+      const L = backgroundLightness(getComputedStyle(n));
+      if (L !== null) return L;
+    }
+    return null;
+  }
+
+  let lastReport = ''; // what this frame last told the page around it
+  function reportFrame(again) {
+    if (isTop) return;
+    const L = ownLightness();
+    const msg = { L: L ?? null, picture: L === undefined, dark: canvasLightness() < 0.5 };
+    const key = JSON.stringify(msg);
+    if (!again && key === lastReport) return;
+    lastReport = key;
+    post(parent, 'report', msg);
+  }
+
+  function setFlipped(on) {
+    if (on === flipped) return;
+    flipped = on;
+    if (on) document.documentElement.setAttribute(FLIPPED, '');
+    else document.documentElement.removeAttribute(FLIPPED);
+    themeChanged();
+  }
+
+  /**
+   * How light a frame looks: its document's own background; where that is transparent, the
+   * iframe's background, or the opaque canvas the browser paints behind a document whose
+   * colour scheme differs from the iframe's. undefined until there is anything to go on.
+   */
+  function frameLightness(fr, st) {
+    if (st.picture) return undefined;
+    if (typeof st.L === 'number') return st.L;
+    const cs = getComputedStyle(fr);
+    if (st.L === null && schemeDark(cs.colorScheme) !== st.dark) return st.dark ? 0.07 : 1;
+    return backgroundLightness(cs) ?? undefined;
+  }
+
+  function applyFrame(fr) {
+    const st = frames.get(fr);
+    if (!st || !fr.isConnected) return;
+    // An SVG document reports its own verdict; any other one, how light it is.
+    const L = st.verdict ? undefined : frameLightness(fr, st);
+    const verdict = st.verdict || (typeof L === 'number' ? (L > FRAME_LIGHT ? 'flip' : 'none') : null);
+    const r = fr.getBoundingClientRect();
+    let on = false;
+    // Where Dark Reader darkens the page, it darkens the frames in it as well (but not SVG files).
+    if ((verdict === 'flip' || verdict === 'logo') && isActive() && treatmentOn(verdict) &&
+        (st.verdict || !darkReaderDark()) &&
+        r.width >= 8 && r.height >= 8 && (r.width > SMALL || r.height > SMALL)) {
+      if (st.ownInverted === undefined) {
+        st.ownInverted = !fr.hasAttribute(ATTR_L) && getComputedStyle(fr).filter.includes('invert');
+      }
+      const ctx = surroundings(fr, r);
+      st.provisional = !ctx.measured;
+      if (ctx.L <= DARK_PAGE && !ctx.inverted && !st.ownInverted) {
+        on = true;
+        const l = String(Math.min(40, Math.floor(ctx.floor * 50) * 2));
+        if (fr.getAttribute(ATTR_L) !== l) fr.setAttribute(ATTR_L, l);
+      }
+    }
+    if (!on) fr.removeAttribute(ATTR_L);
+    if (!verdict) fr.removeAttribute(ATTR);
+    else fr.setAttribute(ATTR, verdict);
+    if (on !== st.on) {
+      st.on = on;
+      const win = windowOf(fr);
+      if (win && !st.verdict) post(win, 'flipped', { on });
+    }
+    if (ready) fr.removeAttribute(WAIT);
+    queueBadges();
+  }
+
+  function addFrame(fr) {
+    if (frames.has(fr)) return;
+    frames.set(fr, { on: false });
+    frameSeen.observe(fr);
+    // A white iframe is held, like an image, until settings say whether to flip it.
+    if (!ready && backgroundLightness(getComputedStyle(fr)) > FRAME_LIGHT) fr.setAttribute(WAIT, '');
+    applyFrame(fr); // its own background may already say (inside the MutationObserver: before paint)
+    const win = windowOf(fr);
+    if (win) post(win, 'hello');
+  }
+
+  function frameOf(win) {
+    for (const fr of frames.keys()) if (windowOf(fr) === win) return fr;
+    for (const fr of document.querySelectorAll(FRAMES)) {
+      if (windowOf(fr) === win) { addFrame(fr); return fr; }
+    }
+    return null;
+  }
+
+  // Measure the real backdrop once a frame is on screen, as for images.
+  const frameSeen = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) applyFrame(e.target);
+  });
+
+  addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || typeof d !== 'object' || !d[MSG] || !e.source) return;
+    if (!isTop && e.source === parent) {
+      if (d[MSG] === 'hello') reportFrame(true);
+      else if (d[MSG] === 'flipped') setFlipped(!!d.on);
+      else if (d[MSG] === 'peek') setPeek(!!d.on, parent);
+      return;
+    }
+    const fr = frameOf(e.source);
+    if (!fr) return;
+    if (d[MSG] === 'report') {
+      const st = frames.get(fr);
+      st.L = typeof d.L === 'number' ? d.L : null;
+      st.picture = !!d.picture;
+      st.dark = !!d.dark;
+      st.verdict = ['flip', 'logo', 'dim', 'none'].includes(d.verdict) ? d.verdict : null;
+      applyFrame(fr);
+      if (!st.verdict) post(e.source, 'flipped', { on: st.on }); // a new document in the frame needs telling
+    } else if (d[MSG] === 'peek') {
+      setPeek(!!d.on, e.source);
+    }
+  });
+
   // --------------------------------------------------------------- discovery
 
   function consider(el) {
@@ -816,7 +1033,11 @@
 
   function scan(rootNode) {
     if (isMedia(rootNode)) consider(rootNode);
-    else if (rootNode.querySelectorAll) rootNode.querySelectorAll('img,canvas,video').forEach(consider);
+    else if (isFrame(rootNode)) addFrame(rootNode);
+    else if (rootNode.querySelectorAll) {
+      rootNode.querySelectorAll('img,canvas,video').forEach(consider);
+      rootNode.querySelectorAll(FRAMES).forEach(addFrame);
+    }
   }
 
   const domObserver = new MutationObserver((muts) => {
@@ -865,6 +1086,7 @@
     const dark = pageLightness() <= DARK_PAGE;
     if (lastDark !== null && dark !== lastDark) themeChanged();
     lastDark = dark;
+    reportFrame(false);
   }, 1000);
 
   // Re-check in the next animation frame, i.e. before the theme change is ever painted.
@@ -897,12 +1119,18 @@
       if (near.has(el) || st.card) apply(el); // a card far away still lets go when the page turns light
       else st.stale = true;
     }
+    for (const fr of frames.keys()) {
+      if (fr.isConnected) { applyFrame(fr); continue; }
+      frames.delete(fr);
+      frameSeen.unobserve(fr);
+    }
+    reportFrame(false);
     queueBadges();
   }
 
   /** Remember whether this site is dark, so the next visit hides images from the first byte. */
   function rememberDarkness() {
-    if (!document.body) return;
+    if (!isTop || !document.body) return; // a frame's own colours say nothing about the site
     const dark = pageLightness() <= DARK_PAGE;
     if (dark && !knownDark) {
       knownDark = true;
@@ -915,10 +1143,21 @@
 
   // -------------------------------------------------------------------- peek
 
-  function setPeek(on) {
+  /**
+   * Show the originals, or stop. The page and its frames do it together, wherever the key
+   * went: the change spreads through the tree of frames, never back to where it came from
+   * (`from`, a window), or a quick press would echo back and forth between them.
+   */
+  function setPeek(on, from = null) {
     const html = document.documentElement;
+    if (on === html.hasAttribute(PEEK)) return;
     if (on) html.setAttribute(PEEK, '');
     else html.removeAttribute(PEEK);
+    if (!isTop && from !== parent) post(parent, 'peek', { on });
+    for (const fr of frames.keys()) {
+      const win = windowOf(fr);
+      if (win && win !== from) post(win, 'peek', { on });
+    }
   }
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Alt' && settings.peek === 'alt' && !e.repeat) setPeek(true);
@@ -1042,6 +1281,15 @@
       html += `<b style="left:${Math.max(0, r.left) + 4}px;top:${Math.max(0, r.top) + 4}px;` +
         `background:${BADGE_COLORS[shown]}">${shown} <i>${why}</i></b>`;
     }
+    for (const [fr, st] of frames) {
+      if (!fr.isConnected || !fr.hasAttribute(ATTR)) continue;
+      const r = fr.getBoundingClientRect();
+      if (r.width < 24 || r.height < 16 || r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
+      const shown = st.on ? fr.getAttribute(ATTR) : 'none';
+      const why = (st.verdict ? 'svg file' : 'frame') + (fr.getAttribute(ATTR) !== 'none' && !st.on ? ' · sits on light' : '');
+      html += `<b style="left:${Math.max(0, r.left) + 4}px;top:${Math.max(0, r.top) + 4}px;` +
+        `background:${BADGE_COLORS[shown]}">${shown} <i>${why}</i></b>`;
+    }
     badgeLayer.list.innerHTML = html;
   }
   addEventListener('scroll', () => { queueBadges(); pointerMoved(); }, { capture: true, passive: true });
@@ -1065,6 +1313,7 @@
       const shown = img.hasAttribute(ATTR_L) && treatmentOn(st.verdict) ? st.verdict : 'none';
       counts[shown]++;
     }
+    for (const [fr, st] of frames) if (fr.isConnected && fr.hasAttribute(ATTR)) counts[st.on ? fr.getAttribute(ATTR) : 'none']++;
     return {
       counts, host: HOST, active: isActive(), filterMode,
       pageDark: pageLightness() <= DARK_PAGE, darkReader: detectDarkReader(),
