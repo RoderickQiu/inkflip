@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://inkflip.r-q.name">Website</a> ·
-  <a href="https://inkflip.r-q.name/download/inkflip.zip">Download for Chrome</a> ·
+  <a href="https://chromewebstore.google.com/detail/inkflip-dark-mode-for-ima/eoilngdponimjhhfdfahpkfkkhopbfjc">Chrome Web Store</a> ·
   <a href="https://inkflip.r-q.name/privacy">Privacy</a>
 </p>
 
@@ -105,11 +105,11 @@ none of the photos.
 
 ## Install
 
-The Chrome Web Store listing is pending. Until it's live:
+Get it from the [Chrome Web Store](https://chromewebstore.google.com/detail/inkflip-dark-mode-for-ima/eoilngdponimjhhfdfahpkfkkhopbfjc).
 
-1. Download [inkflip.zip](https://inkflip.r-q.name/download/inkflip.zip) and unzip it.
-2. Open `chrome://extensions` and turn on **Developer mode**.
-3. Click **Load unpacked** and choose the unzipped folder.
+To install by hand instead, download [inkflip.zip](https://inkflip.r-q.name/download/inkflip.zip)
+and unzip it, turn on **Developer mode** in `chrome://extensions`, click **Load unpacked** and
+choose the unzipped folder.
 
 It works in Chrome, Edge, Brave, Arc and other Chromium browsers, version 116 or later. Install
 [Dark Reader](https://chromewebstore.google.com/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh)
