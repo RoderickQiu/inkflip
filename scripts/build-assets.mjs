@@ -71,13 +71,13 @@ const pages = {
   'dist/store/4-popup.jpg': {
     w: 1280, h: 800, scale: 1, html: `
     <style>${base} .wrap{padding:40px 48px} .row{display:flex;gap:36px;margin-top:30px;align-items:flex-start}
-      .pop{width:330px;border-radius:14px;box-shadow:0 0 0 1px #2a2e34,0 18px 50px #0009}</style>
+      .pop{position:absolute;top:40px;right:48px;height:720px;border-radius:14px;box-shadow:0 0 0 1px #2a2e34,0 18px 50px #0009}</style>
     <div class="wrap">
       <div class="brand"><img src="${icon}"><div><h1>Diagrams flip. Photos never do.</h1><p>Each image is checked on its own; right-click to correct any call</p></div></div>
       <div class="row">
         ${crop(badges, 36, 96, 934, 600, 0.84)}
-        <img class="pop" src="${popup}" style="width:286px">
       </div>
+      <img class="pop" src="${popup}">
     </div>`,
   },
   'dist/store/promo-440x280.png': {
