@@ -99,7 +99,7 @@ flipped too, with or without Dark Reader, which doesn't reach them.
 On a dark page, a new image stays hidden until Inkflip has checked it, so it never shows up
 white first. Light pages and sites you switch off are left alone.
 
-I tested Inkflip on 73 real pages and labelled 393 images from them by hand. It gets 392 of
+I tested Inkflip on 73 real pages, and Claude Code labelled 393 images from them. It gets 392 of
 the 393 right (the last, a black-and-white waveform, is dimmed instead of flipped) and flips
 none of the photos.
 
@@ -209,7 +209,7 @@ extension/            the extension (load this folder unpacked)
   background.js       cross-origin images, verdict cache, right-click menu, shortcut
   popup/              the toolbar popup
 site/                 the website (static, on Vercel)
-research/             field-test pages, hand-labelled images, harvest and eval tools
+research/             field-test pages, labelled images, harvest and eval tools
 test/                 unit, real-image, end-to-end and field tests
 scripts/              icons, showcase captures, site and store assets, packaging
 docs/images/          README images

@@ -36,7 +36,7 @@ Also:
 ## 0.2.0 (6 October 2026)
 
 Field-tested on 73 real pages, including the sites people have complained about in Dark
-Reader's issue tracker, and tuned on 393 hand-labelled images taken from them.
+Reader's issue tracker, and tuned on 393 images taken from them and labelled by AI.
 
 - **Transparent diagrams are now fixed.** Black lines and labels on a transparent PNG
   (Wikipedia chemistry and graph diagrams, cp-algorithms, colah's LSTM posts, README logos)
